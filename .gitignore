@@ -45,3 +45,4 @@ build/
 
 # Mac system files
 .DS_Store 
+/src/generated/prisma
