@@ -1,90 +1,158 @@
-import jwt from "jsonwebtoken";
 import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
 import { PrismaClient } from "../generated/prisma";
-import bcrypt from "bcrypt";
-import { OAuth2Client } from "google-auth-library";
+import { generateToken } from "../utils/jwt";
+import crypto from "crypto";
+import { sendResetEmail } from "../utils/mailer";
 
 const prisma = new PrismaClient();
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-const secret = process.env.JWT_SECRET;
-if (!secret) throw new Error("JWT_SECRET is not defined");
-
-const createToken = (userId: string) => {
-  const accessToken = jwt.sign({ userId }, secret, { expiresIn: "15m" });
-  const refreshToken = jwt.sign({ userId }, secret, { expiresIn: "7d" });
-  return { accessToken, refreshToken };
-};
-
 export const register = async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
-  if (!name || !email || !password)
-    return res.status(400).json({ message: "All fields are required" });
+  try {
+    const userExists = await prisma.user.findUnique({ where: { email } });
+    if (userExists)
+      return res.status(400).json({ message: "User already exists" });
 
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser)
-    return res.status(400).json({ message: "User already exists" });
+    const hashed = await bcrypt.hash(password, 10);
+    const newUser = await prisma.user.create({
+      data: { 
+        name, 
+        email, 
+        password: hashed, 
+        role: "user",
+        provider: "local",
+        providerId: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      },
+    });
 
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email,
-      password: hashedPassword,
-      provider: "credentials",
-      providerId: email,
-    },
-  });
-  const tokens = createToken(user.id);
-  res.json({ user, ...tokens });
+    const token = generateToken(String(newUser.id), newUser.role);
+
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+      .status(201)
+      .json({ user: { ...newUser, password: undefined } });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err });
+  }
 };
 
 export const login = async (req: Request, res: Response) => {
   const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ message: "Missing email or password" });
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.password)
-    return res.status(401).json({ message: "Invalid credentials" });
+    if (!user.password) return res.status(400).json({ message: "Invalid credentials" });
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch)
+      return res.status(400).json({ message: "Invalid credentials" });
 
-  const tokens = createToken(user.id);
-  res.json({ user, ...tokens });
+    const token = generateToken(String(user.id), user.role);
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+      .status(200)
+      .json({ user: { ...user, password: undefined } });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err });
+  }
 };
 
-export const googleOAuth = async (req: Request, res: Response) => {
-    const { token } = req.body;
-    try {
-      const ticket = await googleClient.verifyIdToken({
-        idToken: token,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-  
-      const payload = ticket.getPayload();
-      if (!payload || !payload.email) throw new Error("Invalid Google token");
-  
-      let user = await prisma.user.findUnique({ where: { providerId: payload.sub } });
-  
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            name: payload.name,
-            email: payload.email,
-            image: payload.picture,
-            provider: "google",
-            providerId: payload.sub,
-          },
-        });
-      }
-  
-      const tokens = createToken(user.id);
-      res.json({ user, ...tokens });
-    } catch (error) {
-      console.error(error);
-      res.status(401).json({ message: "Invalid Google token" });
+export const forgotPassword = async (req: Request, res: Response) => {
+  const { email } = req.body;
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
+
+    await prisma.user.update({
+      where: { email },
+      data: {
+        resetToken: token,
+        resetTokenExpiry,
+      },
+    });
+
+    await sendResetEmail(email, token);
+    res.status(200).json({ message: "Reset email sent" });
+  } catch (err) {
+    res.status(500).json({ message: "Error sending email", error: err });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  const { token, newPassword } = req.body;
+  try {
+    const user = await prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpiry: { gt: new Date() },
+      },
+    });
+
+    if (!user)
+      return res.status(400).json({ message: "Invalid or expired token" });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashed,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+
+    res.status(200).json({ message: "Password reset successful" });
+  } catch (err) {
+    res.status(500).json({ message: "Error resetting password", error: err });
+  }
+};
+
+export const logout = (req: Request, res: Response) => {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: false,
+    sameSite: "lax",
+  });
+  res.status(200).json({ message: "Logged out successfully", user: null });
+};
+
+export const me = async (req: Request, res: Response) => {
+  try {
+    // Assuming userId is set by auth middleware (e.g., req.auth?.userId)
+    const userId = (req as any).auth?.userId;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
-  };
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        provider: true,
+        role: true,
+      },
+    });
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+};

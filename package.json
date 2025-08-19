@@ -17,6 +17,7 @@
     "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
     "@types/dotenv": "^6.1.1",
+    "@types/nodemailer": "^7.0.0",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
@@ -27,6 +28,7 @@
     "gitignore": "^0.7.0",
     "google-auth-library": "^10.2.1",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^7.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0"
   },
