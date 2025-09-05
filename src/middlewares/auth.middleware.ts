@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 
 interface DecodedToken {
   id: string;
+  role?: string;
 }
 
 export const protect = (req: Request, res: Response, next: NextFunction) => {
@@ -18,8 +19,7 @@ export const protect = (req: Request, res: Response, next: NextFunction) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as DecodedToken;
-    // req.body.userId = decoded.id;
-    (req as any).user = { id: decoded.id };
+    (req as any).user = { id: decoded.id, role: decoded.role };
     next();
   } catch (err) {
     res.status(401).json({ message: "Invalid token" });

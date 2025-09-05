@@ -1,7 +1,7 @@
 export {};
 
-declare module 'express-serve-static-core' {
+declare module "express-serve-static-core" {
   interface Request {
-    auth?: { userId: string };
+    user?: { id: string; role?: string };
   }
 }
