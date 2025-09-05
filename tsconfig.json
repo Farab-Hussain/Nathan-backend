@@ -1,8 +1,13 @@
 {
   "compilerOptions": {
-    
-    "typeRoots": ["./src/types", "./node_modules/@types"],
-    "types": ["node", "express"],
+    "typeRoots": [
+      "./src/types",
+      "./node_modules/@types"
+    ],
+    "types": [
+      "node",
+      "express"
+    ],
     /* Visit https://aka.ms/tsconfig to read more about this file */
     /* Projects */
     // "incremental": true,                              /* Save .tsbuildinfo files to allow for incremental compilation of projects. */
@@ -105,5 +110,8 @@
     // "skipDefaultLibCheck": true,                      /* Skip type checking .d.ts files that are included with TypeScript. */
     "skipLibCheck": true /* Skip type checking all .d.ts files. */
   },
-  "include": ["src", "prisma"]
+  "include": [
+    "src",
+    "prisma"
+  ]
 }

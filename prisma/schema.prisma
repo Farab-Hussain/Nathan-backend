@@ -27,5 +27,197 @@ model User {
   resetTokenExpiry DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
-  refreshToken     String?   // Store hashed refresh token
+  refreshToken     String? // Store hashed refresh token
+
+  // Relations
+  cartItems CartItem[]
+  cartLines CartLine[]
+  orders    Order[]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  stock       Int      @default(0)
+  category    String // "Traditional", "Sour", "Sweet"
+  sku         String? // e.g., "3P-TRD-REDx3"
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  productFlavors ProductFlavor[]
+
+  @@index([category])
+  @@index([isActive])
+  @@index([sku])
+}
+
+model ProductFlavor {
+  id        String @id @default(cuid())
+  productId String
+  flavorId  String
+  quantity  Int
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  flavor  Flavor  @relation(fields: [flavorId], references: [id])
+
+  @@unique([productId, flavorId])
+  @@index([productId])
+  @@index([flavorId])
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  userId          String
+  status          String   @default("pending") // pending, confirmed, shipped, delivered, cancelled
+  total           Float
+  shippingAddress Json?
+  paymentStatus   String   @default("pending") // pending, paid, failed
+  orderNotes      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+  total     Float
+  createdAt DateTime @default(now())
+
+  // Relations
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// 3-Pack System Models
+model Flavor {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  aliases   String[] // for search & import cleaning
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  packRecipeItems PackRecipeItem[]
+  inventory       FlavorInventory[]
+  productFlavors  ProductFlavor[]
+
+  @@index([active])
+}
+
+model PackRecipe {
+  id        String   @id @default(cuid())
+  title     String
+  kind      String // "Traditional" | "Sour" | "Sweet"
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items     PackRecipeItem[]
+  cartLines CartLine[]
+
+  @@index([kind])
+  @@index([active])
+}
+
+model PackRecipeItem {
+  id           String @id @default(cuid())
+  packRecipeId String
+  flavorId     String
+  quantity     Int
+
+  // Relations
+  packRecipe PackRecipe @relation(fields: [packRecipeId], references: [id], onDelete: Cascade)
+  flavor     Flavor     @relation(fields: [flavorId], references: [id])
+
+  @@unique([packRecipeId, flavorId])
+  @@index([packRecipeId])
+  @@index([flavorId])
+}
+
+model FlavorInventory {
+  id          String   @id @default(cuid())
+  flavorId    String   @unique
+  onHand      Int      @default(0)
+  reserved    Int      @default(0) // in open carts/orders
+  safetyStock Int      @default(5)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  flavor Flavor @relation(fields: [flavorId], references: [id])
+
+  @@index([flavorId])
+}
+
+// Updated CartItem for 3-pack system
+model CartItem {
+  id              String   @id @default(cuid())
+  userId          String
+  productId       String?
+  title           String
+  imageUrl        String?
+  stikersImgeUrl  String[]
+  stikersName     String[]
+  size            String?
+  sizeAndQuantity Json?
+  colorsName      String?
+  colorsCode      String?
+  options         Json
+  quantity        Int
+  total           Float
+  orderNotes      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+}
+
+// New CartLine for 3-pack system
+model CartLine {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String // "3-pack"
+  recipeId  String
+  quantity  Int // number of 3-packs
+  unitPrice Float // 27.00 (copied for price integrity)
+  sku       String // generated SKU
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  packRecipe PackRecipe @relation(fields: [recipeId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+  @@index([recipeId])
 }

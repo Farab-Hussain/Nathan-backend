@@ -8,15 +8,16 @@
   "main": "server.js",
   "scripts": {
     "dev": "ts-node-dev src/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "seed": "node prisma/seed.js"
   },
   "dependencies": {
-    "@prisma/client": "^6.13.0",
     "@types/axios": "^0.9.36",
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
     "@types/dotenv": "^6.1.1",
+    "@types/multer": "^2.0.0",
     "@types/nodemailer": "^7.0.0",
     "axios": "^1.11.0",
     "bcrypt": "^6.0.0",
@@ -28,16 +29,20 @@
     "gitignore": "^0.7.0",
     "google-auth-library": "^10.2.1",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
     "nodemailer": "^7.0.5",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0"
   },
   "devDependencies": {
+    "@prisma/client": "^6.15.0",
     "@types/express": "^5.0.3",
     "@types/express-session": "^1.18.2",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/passport": "^1.0.17",
-    "prisma": "^6.13.0",
+    "i": "^0.3.7",
+    "npm": "^11.6.0",
+    "prisma": "^6.15.0",
     "ts-node-dev": "^2.0.0",
     "types": "^0.1.1",
     "typescript": "^5.9.2"
