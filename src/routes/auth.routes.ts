@@ -8,19 +8,46 @@ import {
   me,
 } from "../controller/authController";
 import { protect } from "../middlewares/auth.middleware";
+import { 
+  validateEmail, 
+  validatePassword, 
+  validateName, 
+  validateRequest 
+} from "../middlewares/security.middleware";
+import { body } from "express-validator";
 
 const router = express.Router();
 
-router.post("/register", register);
+// Register route with validation
+router.post("/register", [
+  validateName,
+  validateEmail,
+  validatePassword,
+  validateRequest
+], register);
 
-router.post("/login", login);
+// Login route with validation
+router.post("/login", [
+  validateEmail,
+  body('password').notEmpty().withMessage('Password is required'),
+  validateRequest
+], login);
 
-router.post("/forgot-password", forgotPassword);
+// Forgot password route with validation
+router.post("/forgot-password", [
+  validateEmail,
+  validateRequest
+], forgotPassword);
 
-router.post("/reset-password", resetPassword);
+// Reset password route with validation
+router.post("/reset-password", [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('code').isLength({ min: 6, max: 6 }).withMessage('Code must be 6 digits'),
+  validatePassword,
+  validateRequest
+], resetPassword);
 
 router.post("/logout", logout);
-
 router.get("/me", protect, me);
 
 export default router;
