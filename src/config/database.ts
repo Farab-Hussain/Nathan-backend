@@ -1,5 +1,9 @@
+import dotenv from 'dotenv';
 import { PrismaClient } from '../generated/prisma';
 import { logger } from '../utils/logger';
+
+// Load environment variables first
+dotenv.config();
 
 // Database connection configuration
 const createPrismaClient = () => {

@@ -1,6 +1,9 @@
+import dotenv from "dotenv";
+// Load environment variables first
+dotenv.config();
+
 import express, { Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import authRoutes from "./routes/auth.routes";
 import cartRoutes from "./routes/cart.routes";
@@ -21,8 +24,6 @@ import {
   securityHeaders, 
   requestLogger 
 } from "./middlewares/security.middleware";
-
-dotenv.config();
 
 const app = express();
 
