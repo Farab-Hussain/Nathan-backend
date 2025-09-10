@@ -179,3 +179,44 @@ export const me = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+export const updateProfile = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const { name, phone } = req.body;
+    
+    // Validate input
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ message: "Name is required" });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: name.trim(),
+        ...(phone && { phone: phone.trim() }),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        image: true,
+        provider: true,
+        role: true,
+      },
+    });
+
+    res.json({ 
+      message: "Profile updated successfully", 
+      user: updatedUser 
+    });
+  } catch (err) {
+    logger.error("Error updating profile:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

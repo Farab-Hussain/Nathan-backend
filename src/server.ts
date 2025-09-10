@@ -33,11 +33,26 @@ app.use(helmetConfig);
 app.use(securityHeaders);
 
 // CORS configuration
+const allowedOrigins = [
+  "https://licorice4good.com",
+  "https://www.licorice4good.com", 
+  "https://api.licorice4good.com",
+  "http://localhost:3000",  // Next.js dev server
+  "http://localhost:5000",  // Backend dev server
+];
+
 app.use(cors({ 
-  origin: process.env.NODE_ENV === "production" 
-    ? ["https://licorice4good.com", "https://www.licorice4good.com"] 
-    : process.env.CLIENT_URL, 
-  credentials: true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true, // ✅ needed for cookies/sessions
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   exposedHeaders: ["Set-Cookie"]
