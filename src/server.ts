@@ -12,6 +12,7 @@ import inventoryRoutes from "./routes/inventory.routes";
 import paymentsRoutes from "./routes/payments.routes";
 
 import { logger } from "./utils/logger";
+import { prisma } from "./config/database";
 import { errorHandler, notFound } from "./middlewares/error.middleware";
 import { 
   helmetConfig, 
@@ -111,6 +112,15 @@ const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   logger.info(`Server is running on port ${PORT} in ${process.env.NODE_ENV} mode`);
 });
+
+// Test database connection
+prisma.$connect()
+  .then(() => {
+    logger.info('Database connected successfully');
+  })
+  .catch((err) => {
+    logger.error('Database connection failed:', err);
+  });
 
 server.on("error", (err) => {
   logger.error(`Server error: ${err.message}`);
