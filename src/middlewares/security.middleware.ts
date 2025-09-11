@@ -35,11 +35,18 @@ export const generalRateLimit = createRateLimit(
   'Too many requests from this IP, please try again later.'
 );
 
-// Strict rate limit for auth endpoints
+// Strict rate limit for auth endpoints (login, register, etc.)
 export const authRateLimit = createRateLimit(
   15 * 60 * 1000, // 15 minutes
-  5, // 5 attempts per window
+  10, // 10 attempts per window (increased from 5)
   'Too many authentication attempts, please try again later.'
+);
+
+// More lenient rate limit for /me endpoint
+export const meRateLimit = createRateLimit(
+  5 * 60 * 1000, // 5 minutes
+  20, // 20 requests per 5 minutes
+  'Too many requests to user profile, please try again later.'
 );
 
 // Helmet configuration

@@ -13,7 +13,8 @@ import {
   validateEmail, 
   validatePassword, 
   validateName, 
-  validateRequest 
+  validateRequest,
+  meRateLimit
 } from "../middlewares/security.middleware";
 import { body } from "express-validator";
 
@@ -49,7 +50,7 @@ router.post("/reset-password", [
 ], resetPassword);
 
 router.post("/logout", logout);
-router.get("/me", protect, me);
+router.get("/me", meRateLimit, protect, me);
 router.put("/profile", protect, [
   validateName,
   validateRequest
