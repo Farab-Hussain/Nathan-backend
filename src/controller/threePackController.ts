@@ -220,3 +220,97 @@ export const getAllPackRecipes = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error fetching pack recipes" });
   }
 };
+
+// Create new flavor (Admin only)
+export const createFlavor = async (req: Request, res: Response) => {
+  try {
+    const { name, aliases = [], active = true } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: "Flavor name is required" });
+    }
+
+    // Check if flavor already exists
+    const existingFlavor = await prisma.flavor.findUnique({
+      where: { name: name.trim() },
+    });
+
+    if (existingFlavor) {
+      return res.status(400).json({ message: "Flavor with this name already exists" });
+    }
+
+    const flavor = await prisma.flavor.create({
+      data: {
+        name: name.trim(),
+        aliases: Array.isArray(aliases) ? aliases : [],
+        active: Boolean(active),
+      },
+    });
+
+    res.status(201).json(flavor);
+  } catch (error) {
+    console.error("Error creating flavor:", error);
+    res.status(500).json({ message: "Error creating flavor" });
+  }
+};
+
+// Update flavor (Admin only)
+export const updateFlavor = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, aliases, active } = req.body;
+
+    const updateData: any = {};
+    
+    if (name !== undefined) {
+      updateData.name = name.trim();
+    }
+    if (aliases !== undefined) {
+      updateData.aliases = Array.isArray(aliases) ? aliases : [];
+    }
+    if (active !== undefined) {
+      updateData.active = Boolean(active);
+    }
+
+    const flavor = await prisma.flavor.update({
+      where: { id },
+      data: updateData,
+    });
+
+    res.json(flavor);
+  } catch (error) {
+    console.error("Error updating flavor:", error);
+    res.status(500).json({ message: "Error updating flavor" });
+  }
+};
+
+// Delete flavor (Admin only)
+export const deleteFlavor = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if flavor is used in any products or recipes
+    const productFlavors = await prisma.productFlavor.findFirst({
+      where: { flavorId: id },
+    });
+
+    const packRecipeItems = await prisma.packRecipeItem.findFirst({
+      where: { flavorId: id },
+    });
+
+    if (productFlavors || packRecipeItems) {
+      return res.status(400).json({ 
+        message: "Cannot delete flavor that is used in products or recipes" 
+      });
+    }
+
+    await prisma.flavor.delete({
+      where: { id },
+    });
+
+    res.json({ message: "Flavor deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting flavor:", error);
+    res.status(500).json({ message: "Error deleting flavor" });
+  }
+};

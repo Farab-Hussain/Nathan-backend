@@ -4,6 +4,9 @@ import {
   getInventoryAvailability,
   getAllFlavors,
   getAllPackRecipes,
+  createFlavor,
+  updateFlavor,
+  deleteFlavor,
 } from "../controller/threePackController";
 import { protect } from "../middlewares/auth.middleware";
 import { adminOnly } from "../middlewares/admin.middleware";
@@ -17,6 +20,9 @@ router.get("/inventory/availability", getInventoryAvailability); // Check invent
 // Admin routes (authentication + admin role required)
 router.use(protect);
 router.get("/admin/flavors", adminOnly, getAllFlavors); // Get all flavors for admin
+router.post("/admin/flavors", adminOnly, createFlavor); // Create new flavor
+router.patch("/admin/flavors/:id", adminOnly, updateFlavor); // Update flavor
+router.delete("/admin/flavors/:id", adminOnly, deleteFlavor); // Delete flavor
 router.get("/admin/recipes", adminOnly, getAllPackRecipes); // Get all pack recipes for admin
 
 export default router;
