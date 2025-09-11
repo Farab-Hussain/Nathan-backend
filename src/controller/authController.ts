@@ -5,6 +5,12 @@ import { generateToken } from "../utils/jwt";
 import crypto from "crypto";
 import { sendResetEmail } from "../utils/mailer";
 import { logger } from "../utils/logger";
+import { 
+  createVerificationToken, 
+  verifyEmailToken, 
+  resendVerificationEmail,
+  isUserVerified 
+} from "../utils/emailVerification";
 
 export const register = async (req: Request, res: Response) => {
   const { name, email, password } = req.body;
@@ -24,8 +30,18 @@ export const register = async (req: Request, res: Response) => {
         providerId: `local_${Date.now()}_${Math.random()
           .toString(36)
           .substr(2, 9)}`,
+        isVerified: false, // User starts unverified
       },
     });
+
+    // Create verification token and send email
+    try {
+      await createVerificationToken(newUser.id, newUser.email!);
+      logger.info(`Verification email sent to ${newUser.email}`);
+    } catch (emailError) {
+      logger.error("Error sending verification email:", emailError);
+      // Don't fail registration if email fails
+    }
 
     const token = generateToken(String(newUser.id), newUser.role);
 
@@ -34,13 +50,22 @@ export const register = async (req: Request, res: Response) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        domain: process.env.NODE_ENV === "production" ? ".licorice4good.com" : undefined,
+        domain:
+          process.env.NODE_ENV === "production"
+            ? ".licorice4good.com"
+            : undefined,
         path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
       .status(201)
-      .json({ user: { ...newUser, password: undefined } });
+      .json({ 
+        message: "Registration successful. Please check your email to verify your account.",
+        user: { ...newUser, password: undefined },
+        token: token,
+        requiresVerification: true
+      });
   } catch (err) {
+    logger.error("Registration error:", err);
     res.status(500).json({ message: "Server error", error: err });
   }
 };
@@ -58,13 +83,25 @@ export const login = async (req: Request, res: Response) => {
     if (!isMatch)
       return res.status(400).json({ message: "Invalid credentials" });
 
+    // Check if user is verified
+    if (!user.isVerified) {
+      return res.status(403).json({ 
+        message: "Please verify your email address before logging in",
+        requiresVerification: true,
+        email: user.email
+      });
+    }
+
     const token = generateToken(String(user.id), user.role);
     res
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        domain: process.env.NODE_ENV === "production" ? ".licorice4good.com" : undefined,
+        domain:
+          process.env.NODE_ENV === "production"
+            ? ".licorice4good.com"
+            : undefined,
         path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
@@ -74,6 +111,7 @@ export const login = async (req: Request, res: Response) => {
         token: token,
       });
   } catch (err) {
+    logger.error("Login error:", err);
     res.status(500).json({ message: "Server error", error: err });
   }
 };
@@ -150,7 +188,8 @@ export const logout = (req: Request, res: Response) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    domain: process.env.NODE_ENV === "production" ? ".licorice4good.com" : undefined,
+    domain:
+      process.env.NODE_ENV === "production" ? ".licorice4good.com" : undefined,
     path: "/",
   });
   res.status(200).json({ message: "Logged out successfully", user: null });
@@ -188,7 +227,7 @@ export const updateProfile = async (req: Request, res: Response) => {
     }
 
     const { name, phone } = req.body;
-    
+
     // Validate input
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ message: "Name is required" });
@@ -211,12 +250,98 @@ export const updateProfile = async (req: Request, res: Response) => {
       },
     });
 
-    res.json({ 
-      message: "Profile updated successfully", 
-      user: updatedUser 
+    res.json({
+      message: "Profile updated successfully",
+      user: updatedUser,
     });
   } catch (err) {
     logger.error("Error updating profile:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Email Verification Endpoints
+
+export const verifyEmail = async (req: Request, res: Response) => {
+  // Support both query params (GET) and body params (POST)
+  const { token, email } = req.method === 'GET' ? req.query : req.body;
+  
+  try {
+    if (!token || !email) {
+      return res.status(400).json({ 
+        message: "Verification token and email are required" 
+      });
+    }
+
+    const result = await verifyEmailToken(token as string, email as string);
+    
+    if (!result.success) {
+      return res.status(400).json({ 
+        message: result.message,
+        verified: false
+      });
+    }
+
+    res.status(200).json({
+      message: result.message,
+      verified: true,
+      user: result.user
+    });
+  } catch (err) {
+    logger.error("Email verification error:", err);
+    res.status(500).json({ 
+      message: "Error verifying email",
+      verified: false
+    });
+  }
+};
+
+export const resendVerification = async (req: Request, res: Response) => {
+  const { email } = req.body;
+  
+  try {
+    if (!email) {
+      return res.status(400).json({ 
+        message: "Email is required" 
+      });
+    }
+
+    const result = await resendVerificationEmail(email);
+    
+    if (!result.success) {
+      return res.status(400).json({ 
+        message: result.message 
+      });
+    }
+
+    res.status(200).json({
+      message: result.message
+    });
+  } catch (err) {
+    logger.error("Resend verification error:", err);
+    res.status(500).json({ 
+      message: "Error resending verification email" 
+    });
+  }
+};
+
+export const checkVerificationStatus = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const isVerified = await isUserVerified(userId);
+    
+    res.status(200).json({
+      isVerified,
+      message: isVerified ? "Email is verified" : "Email is not verified"
+    });
+  } catch (err) {
+    logger.error("Check verification status error:", err);
+    res.status(500).json({ 
+      message: "Error checking verification status" 
+    });
   }
 };

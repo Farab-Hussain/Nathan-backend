@@ -7,6 +7,9 @@ import {
   logout,
   me,
   updateProfile,
+  verifyEmail,
+  resendVerification,
+  checkVerificationStatus,
 } from "../controller/authController";
 import { protect } from "../middlewares/auth.middleware";
 import { 
@@ -50,6 +53,17 @@ router.post("/reset-password", [
 ], resetPassword);
 
 router.post("/logout", logout);
+
+// Email verification routes
+router.get("/verify-email", verifyEmail);
+router.post("/verify-email", verifyEmail);
+router.post("/resend-verification", [
+  validateEmail,
+  validateRequest
+], resendVerification);
+router.get("/verification-status", protect, checkVerificationStatus);
+
+// Protected routes
 router.get("/me", meRateLimit, protect, me);
 router.put("/profile", protect, [
   validateName,

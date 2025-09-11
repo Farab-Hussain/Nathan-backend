@@ -23,12 +23,15 @@ model User {
   image            String?
   provider         String    @default("local")
   providerId       String?   @unique
-  role             String    @default("user")
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  refreshToken     String? // Store hashed refresh token
+  role                    String    @default("user")
+  isVerified              Boolean   @default(false)
+  verificationTokenHash   String?
+  verificationTokenExpiry DateTime?
+  resetToken              String?
+  resetTokenExpiry        DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  refreshToken            String? // Store hashed refresh token
 
   // Relations
   cartItems CartItem[]

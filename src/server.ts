@@ -83,7 +83,7 @@ app.use("/uploads", express.static("uploads"));
 app.use(requestLogger);
 
 // Routes with specific rate limiting
-app.use("/auth", authRateLimit, authRoutes);
+app.use("/auth",  authRoutes);
 app.use("/cart", cartRoutes);
 app.use("/products", productRoutes);
 app.use("/orders", orderRoutes);
