@@ -210,6 +210,7 @@ export const me = async (req: Request, res: Response) => {
         image: true,
         provider: true,
         role: true,
+        isVerified: true,
       },
     });
     if (!user) return res.status(404).json({ message: "User not found" });

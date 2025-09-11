@@ -6,6 +6,16 @@ const prisma = new PrismaClient();
 export const addToCart = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    
+    // Verify user exists in database
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true, isVerified: true }
+    });
+    
+    if (!dbUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
     const {
       size,
