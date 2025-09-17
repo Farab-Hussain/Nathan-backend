@@ -1,3 +1,5 @@
+// SINGLE PRODUCT CART ROUTES - COMMENTED OUT (ONLY USING 3-PACK CART)
+/*
 import express from "express";
 import {
   addToCart,
@@ -25,3 +27,4 @@ router.put("/:id", updateCartItem);
 router.delete("/", clearUserCart);
 
 export default router;
+*/

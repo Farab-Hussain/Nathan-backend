@@ -7,17 +7,17 @@ const prisma = new PrismaClient();
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    
+
     // Verify user exists in database
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { id: true, email: true, isVerified: true }
+      select: { id: true, email: true, isVerified: true },
     });
-    
+
     if (!dbUser) {
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     const {
       shippingAddress,
       orderNotes,
@@ -69,6 +69,8 @@ export const createOrder = async (req: Request, res: Response) => {
         calculatedTotal += itemTotal;
       }
     } else {
+      // SINGLE PRODUCT CART APPROACH - COMMENTED OUT (ONLY USING 3-PACK CART)
+      /*
       // Fallback to cart-based approach (existing approach)
       console.log("Creating order from cart items");
 
@@ -120,6 +122,13 @@ export const createOrder = async (req: Request, res: Response) => {
         (sum, item) => sum + item.total,
         0
       );
+      */
+
+      // Since we're only using 3-pack cart, require orderItems to be provided
+      return res.status(400).json({
+        message:
+          "Order items must be provided. Please add items to your 3-pack cart first.",
+      });
     }
 
     // Use provided total or calculated total
@@ -160,12 +169,15 @@ export const createOrder = async (req: Request, res: Response) => {
       }
     }
 
+    // SINGLE PRODUCT CART CLEARING - COMMENTED OUT (ONLY USING 3-PACK CART)
+    /*
     // Clear user's cart only if we used cart-based approach
     if (!orderItems || orderItems.length === 0) {
       await prisma.cartItem.deleteMany({
         where: { userId: user.id },
       });
     }
+    */
 
     res.status(201).json({
       message: "Order created successfully",

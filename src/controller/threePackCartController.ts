@@ -1,46 +1,20 @@
 import { Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
+import {
+  generateCustomSKU,
+  generateSKU,
+  getDefaultPrice,
+  isValidProductType,
+  validateFlavor,
+} from "../utils/skuGenerator";
 
 const prisma = new PrismaClient();
-
-// SKU generation helper (same as in threePackController)
-const generateSKU = (
-  kind: string,
-  items: Array<{ flavor: { name: string }; quantity: number }>
-): string => {
-  const kindMap: { [key: string]: string } = {
-    Traditional: "TRD",
-    Sour: "SOR",
-    Sweet: "SWE",
-  };
-
-  const flavorCodeMap: { [key: string]: string } = {
-    "Red Twist": "RED",
-    "Blue Raspberry": "BLURAS",
-    "Fruit Rainbow": "FRURAI",
-    "Green Apple": "GREAPP",
-    Watermelon: "WAT",
-    Cherry: "CHE",
-    "Berry Delight": "BERDEL",
-    "Cotton Candy": "COT",
-    "Strawberry Banana": "STRBAN",
-  };
-
-  const kindCode = kindMap[kind] || "UNK";
-
-  const components = items.map((item) => {
-    const flavorCode = flavorCodeMap[item.flavor.name] || "UNK";
-    return item.quantity > 1 ? `${flavorCode}x${item.quantity}` : flavorCode;
-  });
-
-  return `3P-${kindCode}-${components.join("-")}`;
-};
 
 // Add 3-pack to cart
 export const addToCart = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
-    const { product_id, recipe_id, qty } = req.body;
+    const { product_id, recipe_id, flavor_ids, qty } = req.body;
 
     // Validate required fields
     if (!product_id || !recipe_id || !qty) {
@@ -50,10 +24,16 @@ export const addToCart = async (req: Request, res: Response) => {
       });
     }
 
-    // Validate product_id is 3-pack
-    if (product_id !== "3-pack") {
+    if (recipe_id && flavor_ids) {
       return res.status(400).json({
-        message: "Only 3-pack products are supported",
+        message: "Cannot specify both recipe_id and flavor_ids",
+      });
+    }
+
+    // Validate product_id using dynamic validation
+    if (!(await isValidProductType(product_id))) {
+      return res.status(400).json({
+        message: `Product type '${product_id}' is not supported`,
       });
     }
 
@@ -62,6 +42,118 @@ export const addToCart = async (req: Request, res: Response) => {
       return res.status(400).json({
         message: "Quantity must be greater than 0",
       });
+    }
+
+    //Handle custom packs
+    if (flavor_ids) {
+      //Validate exactly 3 unique flavors
+      if (!Array.isArray(flavor_ids) || flavor_ids.length !== 3) {
+        return res.status(400).json({
+          message: "flavor_ids must contain exactly 3 unique flavors",
+        });
+      }
+
+      //Check for duplicates
+      const uniqueFlavors = [...new Set(flavor_ids)];
+      if (uniqueFlavors.length !== 3) {
+        return res.status(400).json({
+          message: "flavor_ids must contain exactly 3 unique flavors",
+        });
+      }
+      //Fetch flavors details and check availability
+      const flavors = await prisma.flavor.findMany({
+        where: { id: { in: flavor_ids }, active: true },
+        include: {
+          inventory: true,
+        },
+      });
+
+      if (flavors.length !== 3) {
+        return res.status(400).json({
+          message: "One or more flavors in flavor_ids are not active",
+        });
+      }
+
+      //Check inventory availability for flavors
+      for (const flavor of flavors) {
+        const inventory = flavor.inventory[0];
+        if (!inventory) {
+          return res.status(400).json({
+            message: `No inventory found for flavor: ${flavor.name}`,
+          });
+        }
+
+        const available =
+          inventory.onHand - inventory.reserved - inventory.safetyStock;
+        if (available < requestedQty) {
+          return res.status(400).json({
+            message: `Insufficient stock for ${flavor.name}.Available : ${available}, Required: ${requestedQty}`,
+          });
+        }
+      }
+      //Generate SKU
+      const flavorNames = flavors.map((f) => f.name);
+      const sku = generateCustomSKU(flavorNames);
+
+      //Check if user already has this custom pack in cart
+      const existingCartLine = await prisma.cartLine.findFirst({
+        where: {
+          userId: user.id,
+          productId: product_id,
+          flavorIds: { equals: flavor_ids },
+        },
+      });
+
+      let cartLine;
+      if (existingCartLine) {
+        //Update existing cart line
+        cartLine = await prisma.cartLine.update({
+          where: { id: existingCartLine.id },
+          data: {
+            quantity: existingCartLine.quantity + requestedQty,
+            unitPrice: await getDefaultPrice(product_id),
+          },
+        });
+      } else {
+        //Create new cart line
+        cartLine = await prisma.cartLine.create({
+          data: {
+            userId: user.id,
+            productId: product_id,
+            flavorIds: flavor_ids,
+            quantity: requestedQty,
+            unitPrice: await getDefaultPrice(product_id),
+            sku: sku,
+          },
+        });
+      }
+      //Reserve inventory for custom pack
+      for (const flavor of flavors) {
+        const inventory = flavor.inventory[0];
+        await prisma.flavorInventory.update({
+          where: { flavorId: flavor.id },
+          data: {
+            reserved: inventory.reserved + requestedQty,
+          },
+        });
+      }
+
+      res.status(201).json({
+        message: {
+          id: cartLine.id,
+          product_id: cartLine.productId,
+          flavor_ids: cartLine.flavorIds,
+          quantity: cartLine.quantity,
+          unit_price: cartLine.unitPrice,
+          total: cartLine.quantity * cartLine.unitPrice,
+          sku: cartLine.sku,
+          flavors: flavors.map((f) => ({
+            id: f.id,
+            name: f.name,
+          })),
+        },
+      });
+      return;
     }
 
     // Get the pack recipe with its items and flavors
@@ -138,7 +230,7 @@ export const addToCart = async (req: Request, res: Response) => {
         where: { id: existingCartLine.id },
         data: {
           quantity: existingCartLine.quantity + requestedQty,
-          unitPrice: 27.0, // Fixed price
+          unitPrice: await getDefaultPrice(product_id), // Dynamic price
         },
         include: {
           packRecipe: {
@@ -160,7 +252,7 @@ export const addToCart = async (req: Request, res: Response) => {
           productId: product_id,
           recipeId: recipe_id,
           quantity: requestedQty,
-          unitPrice: 27.0, // Fixed price
+          unitPrice: await getDefaultPrice(product_id), // Dynamic price
           sku: sku,
         },
         include: {
@@ -196,7 +288,7 @@ export const addToCart = async (req: Request, res: Response) => {
         id: cartLine.id,
         product_id: cartLine.productId,
         recipe_id: cartLine.recipeId,
-        recipe_title: cartLine.packRecipe.title,
+        recipe_title: cartLine.packRecipe?.title || "Custom Pack",
         quantity: cartLine.quantity,
         unit_price: cartLine.unitPrice,
         total: cartLine.quantity * cartLine.unitPrice,
@@ -234,17 +326,18 @@ export const getUserCart = async (req: Request, res: Response) => {
       id: line.id,
       product_id: line.productId,
       recipe_id: line.recipeId,
-      recipe_title: line.packRecipe.title,
-      recipe_kind: line.packRecipe.kind,
+      recipe_title: line.packRecipe?.title || "Custom Pack",
+      recipe_kind: line.packRecipe?.kind || "Custom",
       quantity: line.quantity,
       unit_price: line.unitPrice,
       total: line.quantity * line.unitPrice,
       sku: line.sku,
-      items: line.packRecipe.items.map((item) => ({
-        flavor_id: item.flavor.id,
-        flavor_name: item.flavor.name,
-        quantity: item.quantity,
-      })),
+      items:
+        line.packRecipe?.items.map((item) => ({
+          flavor_id: item.flavor.id,
+          flavor_name: item.flavor.name,
+          quantity: item.quantity,
+        })) || [],
     }));
 
     const cartTotal = cart.reduce((sum, line) => sum + line.total, 0);
@@ -302,6 +395,13 @@ export const updateCartLine = async (req: Request, res: Response) => {
 
     const newQty = parseInt(qty);
     const qtyDifference = newQty - cartLine.quantity;
+
+    if (!cartLine.packRecipe) {
+      return res.status(400).json({
+        message:
+          "Cannot update custom pack quantities. Remove and re-add to cart.",
+      });
+    }
 
     if (qtyDifference > 0) {
       // Check if we can add more items
@@ -368,7 +468,7 @@ export const updateCartLine = async (req: Request, res: Response) => {
         id: updatedCartLine.id,
         product_id: updatedCartLine.productId,
         recipe_id: updatedCartLine.recipeId,
-        recipe_title: updatedCartLine.packRecipe.title,
+        recipe_title: updatedCartLine.packRecipe?.title || "Custom Pack",
         quantity: updatedCartLine.quantity,
         unit_price: updatedCartLine.unitPrice,
         total: updatedCartLine.quantity * updatedCartLine.unitPrice,
@@ -415,16 +515,18 @@ export const removeCartLine = async (req: Request, res: Response) => {
     }
 
     // Release reserved inventory
-    for (const item of cartLine.packRecipe.items) {
-      const inventory = item.flavor.inventory[0];
-      const releaseAmount = item.quantity * cartLine.quantity;
+    if (cartLine.packRecipe) {
+      for (const item of cartLine.packRecipe.items) {
+        const inventory = item.flavor.inventory[0];
+        const releaseAmount = item.quantity * cartLine.quantity;
 
-      await prisma.flavorInventory.update({
-        where: { flavorId: item.flavor.id },
-        data: {
-          reserved: Math.max(0, inventory.reserved - releaseAmount),
-        },
-      });
+        await prisma.flavorInventory.update({
+          where: { flavorId: item.flavor.id },
+          data: {
+            reserved: Math.max(0, inventory.reserved - releaseAmount),
+          },
+        });
+      }
     }
 
     // Delete cart line
@@ -466,16 +568,18 @@ export const clearCart = async (req: Request, res: Response) => {
 
     // Release all reserved inventory
     for (const cartLine of cartLines) {
-      for (const item of cartLine.packRecipe.items) {
-        const inventory = item.flavor.inventory[0];
-        const releaseAmount = item.quantity * cartLine.quantity;
+      if (cartLine.packRecipe) {
+        for (const item of cartLine.packRecipe.items) {
+          const inventory = item.flavor.inventory[0];
+          const releaseAmount = item.quantity * cartLine.quantity;
 
-        await prisma.flavorInventory.update({
-          where: { flavorId: item.flavor.id },
-          data: {
-            reserved: Math.max(0, inventory.reserved - releaseAmount),
-          },
-        });
+          await prisma.flavorInventory.update({
+            where: { flavorId: item.flavor.id },
+            data: {
+              reserved: Math.max(0, inventory.reserved - releaseAmount),
+            },
+          });
+        }
       }
     }
 

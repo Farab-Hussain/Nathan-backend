@@ -1,21 +1,16 @@
 import { Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
+import {
+  validateFlavor,
+  generateSKU,
+  generateCustomSKU,
+} from "../utils/skuGenerator";
 
 const prisma = new PrismaClient();
 
 // Helper: resolve a Flavor by provided name (case-insensitive) or alias
 const resolveFlavorByNameOrAlias = async (nameLike: string) => {
-  const candidate = String(nameLike || "").trim();
-  if (!candidate) return null;
-  const flavor = await prisma.flavor.findFirst({
-    where: {
-      OR: [
-        { name: { equals: candidate, mode: "insensitive" } },
-        { aliases: { has: candidate } },
-      ],
-    },
-  });
-  return flavor;
+  return await validateFlavor(nameLike);
 };
 
 // Create new product (Admin only)
@@ -91,7 +86,10 @@ export const createProduct = async (req: Request, res: Response) => {
           if (!flavor) continue; // Skip unknown flavors silently
           await tx.productFlavor.upsert({
             where: {
-              productId_flavorId: { productId: product.id, flavorId: flavor.id },
+              productId_flavorId: {
+                productId: product.id,
+                flavorId: flavor.id,
+              },
             },
             update: { quantity },
             create: {

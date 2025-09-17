@@ -1,3 +1,5 @@
+// SINGLE PRODUCT CART - COMMENTED OUT (ONLY USING 3-PACK CART)
+/*
 import { Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
 
@@ -172,3 +174,4 @@ export const clearUserCart = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error clearing cart" });
   }
 };
+*/

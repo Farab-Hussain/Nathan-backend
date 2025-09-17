@@ -141,7 +141,11 @@ export const sendResetEmail = async (to: string, code: string) => {
   }
 };
 
-export const sendVerificationEmail = async (to: string, token: string, code: string) => {
+export const sendVerificationEmail = async (
+  to: string,
+  token: string,
+  code: string
+) => {
   // Check if email credentials are configured
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.warn(
@@ -165,8 +169,10 @@ export const sendVerificationEmail = async (to: string, token: string, code: str
         },
       });
 
-      const verificationUrl = `${process.env.CLIENT_URL || 'https://licorice4good.com'}/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
-      
+      const verificationUrl = `${
+        process.env.CLIENT_URL || "https://licorice4good.com"
+      }/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
+
       const mailOptions = {
         from: `"Nathan " <${testAccount.user}>`,
         to,
@@ -231,7 +237,9 @@ export const sendVerificationEmail = async (to: string, token: string, code: str
       return;
     } catch (error) {
       console.error("❌ Error with Ethereal email:", error);
-      const verificationUrl = `${process.env.CLIENT_URL || 'https://licorice4good.com'}/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
+      const verificationUrl = `${
+        process.env.CLIENT_URL || "https://licorice4good.com"
+      }/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
       console.log(`🔑 Verification code for ${to}: ${code}`);
       console.log(`🔗 Verification URL: ${verificationUrl}`);
       return;
@@ -247,7 +255,9 @@ export const sendVerificationEmail = async (to: string, token: string, code: str
       },
     });
 
-    const verificationUrl = `${process.env.CLIENT_URL || 'https://licorice4good.com'}/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
+    const verificationUrl = `${
+      process.env.CLIENT_URL || "https://licorice4good.com"
+    }/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
 
     const mailOptions = {
       from: "Nathan  <no-reply@nathan.com>",
@@ -319,9 +329,11 @@ export const sendVerificationEmail = async (to: string, token: string, code: str
           pass: testAccount.pass,
         },
       });
-      
-      const verificationUrl = `${process.env.CLIENT_URL || 'https://licorice4good.com'}/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
-      
+
+      const verificationUrl = `${
+        process.env.CLIENT_URL || "https://licorice4good.com"
+      }/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
+
       const mailOptions = {
         from: `Nathan  <${testAccount.user}>`,
         to,
@@ -384,7 +396,9 @@ export const sendVerificationEmail = async (to: string, token: string, code: str
       return;
     } catch (fallbackErr) {
       console.error("❌ Ethereal fallback failed:", fallbackErr);
-      const verificationUrl = `${process.env.CLIENT_URL || 'https://licorice4good.com'}/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
+      const verificationUrl = `${
+        process.env.CLIENT_URL || "https://licorice4good.com"
+      }/auth/verify-email?token=${token}&email=${encodeURIComponent(to)}`;
       console.log(`🔑 Verification code for ${to}: ${code}`);
       console.log(`🔗 Verification URL: ${verificationUrl}`);
       return;

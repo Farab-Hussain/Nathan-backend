@@ -1,18 +1,18 @@
-import crypto from 'crypto';
-import { prisma } from '../config/database';
-import { sendVerificationEmail } from './mailer';
+import crypto from "crypto";
+import { prisma } from "../config/database";
+import { sendVerificationEmail } from "./mailer";
 
 export interface VerificationTokenData {
   userId: string;
   email: string;
-  type: 'email_verification' | 'password_reset';
+  type: "email_verification" | "password_reset";
 }
 
 /**
  * Generate a secure verification token
  */
 export function generateVerificationToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomBytes(32).toString("hex");
 }
 
 /**
@@ -26,7 +26,7 @@ export function generateVerificationCode(): string {
  * Hash a token for secure storage
  */
 export function hashToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 /**
@@ -35,12 +35,12 @@ export function hashToken(token: string): string {
 export async function createVerificationToken(
   userId: string,
   email: string,
-  type: 'email_verification' | 'password_reset' = 'email_verification'
+  type: "email_verification" | "password_reset" = "email_verification"
 ): Promise<{ token: string; code: string }> {
   const token = generateVerificationToken();
   const code = generateVerificationCode();
   const hashedToken = hashToken(token);
-  
+
   // Set expiry to 24 hours from now
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -54,7 +54,7 @@ export async function createVerificationToken(
   });
 
   // Send verification email
-  if (type === 'email_verification') {
+  if (type === "email_verification") {
     await sendVerificationEmail(email, token, code);
   }
 
@@ -66,25 +66,32 @@ export async function createVerificationToken(
  */
 export async function verifyEmailToken(
   token: string,
-  email?: string
+  email: string
 ): Promise<{ success: boolean; user?: any; message: string }> {
   try {
+    if (!email) {
+      return {
+        success: false,
+        message: "Email is required for verification",
+      };
+    }
+
     const hashedToken = hashToken(token);
-    
+
     const user = await prisma.user.findFirst({
       where: {
         verificationTokenHash: hashedToken,
         verificationTokenExpiry: {
           gt: new Date(),
         },
-        ...(email && { email }),
+        email: email, // Email is now required and must match
       },
     });
 
     if (!user) {
       return {
         success: false,
-        message: 'Invalid or expired verification token',
+        message: "Invalid or expired verification token for this email address",
       };
     }
 
@@ -106,13 +113,13 @@ export async function verifyEmailToken(
         email: user.email,
         isVerified: true,
       },
-      message: 'Email verified successfully',
+      message: "Email verified successfully",
     };
   } catch (error) {
-    console.error('Error verifying email token:', error);
+    console.error("Error verifying email token:", error);
     return {
       success: false,
-      message: 'Error verifying email',
+      message: "Error verifying email",
     };
   }
 }
@@ -131,14 +138,14 @@ export async function resendVerificationEmail(
     if (!user) {
       return {
         success: false,
-        message: 'User not found',
+        message: "User not found",
       };
     }
 
     if (user.isVerified) {
       return {
         success: false,
-        message: 'Email is already verified',
+        message: "Email is already verified",
       };
     }
 
@@ -147,13 +154,13 @@ export async function resendVerificationEmail(
 
     return {
       success: true,
-      message: 'Verification email sent successfully',
+      message: "Verification email sent successfully",
     };
   } catch (error) {
-    console.error('Error resending verification email:', error);
+    console.error("Error resending verification email:", error);
     return {
       success: false,
-      message: 'Error sending verification email',
+      message: "Error sending verification email",
     };
   }
 }

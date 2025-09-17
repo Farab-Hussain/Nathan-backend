@@ -9,11 +9,16 @@ const storage = multer.diskStorage({
     // Determine upload path based on field name
     if (file.fieldname === "productImage") {
       uploadPath += "products/";
-    } else if (file.fieldname === "cartImage") {
+    }
+    // SINGLE PRODUCT CART UPLOAD PATHS - COMMENTED OUT (ONLY USING 3-PACK CART)
+    /*
+    else if (file.fieldname === "cartImage") {
       uploadPath += "cart/";
     } else if (file.fieldname === "stickerImages") {
       uploadPath += "stickers/";
-    } else {
+    } 
+    */
+    else {
       uploadPath += "general/";
     }
 
@@ -54,12 +59,15 @@ const upload = multer({
 
 // Export different upload configurations
 export const uploadProductImage = upload.single("productImage");
+// SINGLE PRODUCT CART UPLOADS - COMMENTED OUT (ONLY USING 3-PACK CART)
+/*
 export const uploadCartImage = upload.single("cartImage");
 export const uploadStickerImages = upload.array("stickerImages", 5); // Max 5 sticker images
 export const uploadMultipleImages = upload.fields([
   { name: "productImage", maxCount: 1 },
   { name: "stickerImages", maxCount: 5 },
 ]);
+*/
 
 // Error handling middleware
 export const handleUploadError = (

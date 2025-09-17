@@ -97,7 +97,7 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // Check if user is verified
+    // Check if user is verified - only block if not verified
     if (!user.isVerified) {
       return res.status(403).json({ 
         message: "Please verify your email address before logging in",
