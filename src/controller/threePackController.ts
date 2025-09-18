@@ -125,7 +125,7 @@ export const getInventoryAvailability = async (req: Request, res: Response) => {
     const availability = [];
 
     for (const item of packRecipe.items) {
-      const inventory = item.flavor.inventory[0];
+      const inventory = item.flavor.inventory;
       if (!inventory) {
         availability.push({
           flavor_id: item.flavor.id,

@@ -7,6 +7,7 @@ import {
   updateProduct,
   deleteProduct,
   getCategories,
+  getAllFlavors,
 } from "../controller/productController";
 import { protect } from "../middlewares/auth.middleware";
 import { adminOnly } from "../middlewares/admin.middleware";
@@ -20,6 +21,7 @@ const router = express.Router();
 // Public routes (no authentication required)
 router.get("/", getAllProducts); // Get all products
 router.get("/categories", getCategories); // Get all product categories
+router.get("/flavors", getAllFlavors); // Get all flavors (public for product management)
 router.get("/:id", getProductById); // Get product by ID
 
 // Admin routes (authentication + admin role required)

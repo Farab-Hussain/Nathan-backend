@@ -25,8 +25,30 @@ export const createOrder = async (req: Request, res: Response) => {
       total: requestTotal,
     } = req.body;
 
-    let orderItemsToCreate = [];
+    // Shipping address validation - allow empty since Stripe will collect it
+    // If shippingAddress is provided, validate it, otherwise allow empty (Stripe will collect)
+    if (shippingAddress && typeof shippingAddress === 'object') {
+      const { street, city, state, zipCode, country } = shippingAddress;
+      
+      // If any field is provided, all required fields must be provided
+      if (street || city || state || zipCode || country) {
+        if (!street || !city || !state || !zipCode || !country) {
+          return res.status(400).json({
+            message: "All shipping address fields are required: street, city, state, zipCode, and country",
+          });
+        }
+
+        if (street.trim() === '' || city.trim() === '' || state.trim() === '' || zipCode.trim() === '') {
+          return res.status(400).json({
+            message: "Shipping address fields cannot be empty",
+          });
+        }
+      }
+    }
+
+    let orderItemsToCreate: any[] = [];
     let calculatedTotal = 0;
+    let cartLines: any[] = []; // Store cart lines for inventory updates
 
     // Check if frontend sent orderItems directly (new approach)
     if (orderItems && Array.isArray(orderItems) && orderItems.length > 0) {
@@ -69,65 +91,99 @@ export const createOrder = async (req: Request, res: Response) => {
         calculatedTotal += itemTotal;
       }
     } else {
-      // SINGLE PRODUCT CART APPROACH - COMMENTED OUT (ONLY USING 3-PACK CART)
-      /*
-      // Fallback to cart-based approach (existing approach)
-      console.log("Creating order from cart items");
+      // 3-PACK CART APPROACH - Convert CartLine items to OrderItems
+      console.log("Creating order from 3-pack cart");
 
-      const cartItems = await prisma.cartItem.findMany({
+      cartLines = await prisma.cartLine.findMany({
         where: { userId: user.id },
+        include: {
+          packRecipe: {
+            include: {
+              items: {
+                include: {
+                  flavor: {
+                    include: {
+                      inventory: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       });
 
-      if (cartItems.length === 0) {
+      if (cartLines.length === 0) {
         return res
           .status(400)
           .json({ message: "Cart is empty and no order items provided" });
       }
 
-      // Check if cart has valid products
-      const validCartItems = cartItems.filter(
-        (item) => item.productId && item.productId !== "unknown"
-      );
-      if (validCartItems.length === 0) {
-        return res.status(400).json({
-          message:
-            "Cart contains no valid products. Please add products to cart first.",
-        });
-      }
+      // Check stock availability for cart lines
+      for (const cartLine of cartLines) {
+        if (cartLine.packRecipe) {
+          // Handle predefined recipes
+          for (const item of cartLine.packRecipe.items) {
+            const inventory = item.flavor.inventory;
+            if (!inventory) {
+              return res.status(400).json({
+                message: `No inventory found for flavor: ${item.flavor.name}`,
+              });
+            }
 
-      // Check stock availability for cart items
-      for (const item of validCartItems) {
-        if (item.productId) {
-          const product = await prisma.product.findUnique({
-            where: { id: item.productId },
+            const required = item.quantity * cartLine.quantity;
+            const available =
+              inventory.onHand - inventory.reserved - inventory.safetyStock;
+
+            if (available < required) {
+              return res.status(400).json({
+                message: `Insufficient stock for ${item.flavor.name}. Available: ${available}, Required: ${required}`,
+              });
+            }
+          }
+        } else if (cartLine.flavorIds.length > 0) {
+          // Handle custom packs
+          const flavors = await prisma.flavor.findMany({
+            where: { id: { in: cartLine.flavorIds } },
+            include: { inventory: true },
           });
 
-          if (product && product.stock < item.quantity) {
-            return res.status(400).json({
-              message: `Insufficient stock for ${product.name}`,
-            });
+          for (const flavor of flavors) {
+            const inventory = flavor.inventory;
+            if (!inventory) {
+              return res.status(400).json({
+                message: `No inventory found for flavor: ${flavor.name}`,
+              });
+            }
+
+            const available =
+              inventory.onHand - inventory.reserved - inventory.safetyStock;
+
+            if (available < cartLine.quantity) {
+              return res.status(400).json({
+                message: `Insufficient stock for ${flavor.name}. Available: ${available}, Required: ${cartLine.quantity}`,
+              });
+            }
           }
         }
       }
 
-      // Convert cart items to order items
-      orderItemsToCreate = validCartItems.map((item) => ({
-        productId: item.productId!,
-        quantity: item.quantity,
-        price: item.total / item.quantity,
-        total: item.total,
+      // Convert cart lines to order items
+      orderItemsToCreate = cartLines.map((cartLine) => ({
+        productId: cartLine.productId,
+        quantity: cartLine.quantity,
+        price: cartLine.unitPrice,
+        total: cartLine.quantity * cartLine.unitPrice,
       }));
 
-      calculatedTotal = validCartItems.reduce(
-        (sum, item) => sum + item.total,
+      calculatedTotal = cartLines.reduce(
+        (sum, cartLine) => sum + (cartLine.quantity * cartLine.unitPrice),
         0
       );
-      */
 
-      // Since we're only using 3-pack cart, require orderItems to be provided
-      return res.status(400).json({
-        message:
-          "Order items must be provided. Please add items to your 3-pack cart first.",
+      // Clear the cart after successful order creation
+      await prisma.cartLine.deleteMany({
+        where: { userId: user.id },
       });
     }
 
@@ -150,20 +206,59 @@ export const createOrder = async (req: Request, res: Response) => {
       },
     });
 
-    // Update product stock for all order items
+    // Update inventory for all order items
     for (const item of orderItemsToCreate) {
       try {
-        await prisma.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: {
-              decrement: item.quantity,
+        // For 3-pack products, we need to deduct from flavor inventory
+        if (item.productId === "3-pack") {
+          // Get the cart line to find flavor details
+          const cartLine = cartLines.find(cl => cl.productId === item.productId);
+          
+          if (cartLine?.packRecipe) {
+            // Handle predefined recipes
+            for (const recipeItem of cartLine.packRecipe.items) {
+              await prisma.flavorInventory.update({
+                where: { flavorId: recipeItem.flavor.id },
+                data: {
+                  onHand: {
+                    decrement: recipeItem.quantity * item.quantity,
+                  },
+                  reserved: {
+                    decrement: recipeItem.quantity * item.quantity,
+                  },
+                },
+              });
+            }
+          } else if (cartLine?.flavorIds.length > 0) {
+            // Handle custom packs
+            for (const flavorId of cartLine.flavorIds) {
+              await prisma.flavorInventory.update({
+                where: { flavorId },
+                data: {
+                  onHand: {
+                    decrement: item.quantity,
+                  },
+                  reserved: {
+                    decrement: item.quantity,
+                  },
+                },
+              });
+            }
+          }
+        } else {
+          // Handle regular products
+          await prisma.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: {
+                decrement: item.quantity,
+              },
             },
-          },
-        });
+          });
+        }
       } catch (error) {
         console.warn(
-          `Could not update stock for product ${item.productId}:`,
+          `Could not update inventory for product ${item.productId}:`,
           error
         );
       }

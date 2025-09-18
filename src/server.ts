@@ -21,7 +21,7 @@ import { errorHandler, notFound } from "./middlewares/error.middleware";
 import {
   helmetConfig,
   generalRateLimit,
-  authRateLimit,
+  // authRateLimit, // COMMENTED OUT FOR NOW
   securityHeaders,
   requestLogger,
 } from "./middlewares/security.middleware";
@@ -105,6 +105,7 @@ app.get("/health", (req: Request, res: Response) => {
     environment: process.env.NODE_ENV,
   });
 });
+
 
 // 404 handler
 app.use(notFound);
