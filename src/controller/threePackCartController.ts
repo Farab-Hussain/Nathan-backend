@@ -16,19 +16,22 @@ export const addToCart = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const { product_id, recipe_id, flavor_ids, qty } = req.body;
 
-    // Validate required fields
-    if (!product_id || !recipe_id || !qty) {
+    // Validate required fields - only product_id and qty are always required
+    if (!product_id || !qty) {
       return res.status(400).json({
-        message:
-          "Missing required fields: product_id, recipe_id, and qty are required",
+        message: "Missing required fields: product_id and qty are required",
       });
     }
 
+    // Either recipe_id OR flavor_ids must be provided, but not both
     if (recipe_id && flavor_ids) {
       return res.status(400).json({
         message: "Cannot specify both recipe_id and flavor_ids",
       });
     }
+
+    // For backward compatibility, allow requests without recipe_id or flavor_ids
+    // This will be handled by the existing logic below
 
     // Validate product_id using dynamic validation
     if (!(await isValidProductType(product_id))) {
@@ -154,6 +157,15 @@ export const addToCart = async (req: Request, res: Response) => {
         },
       });
       return;
+    }
+
+    // Handle case where neither recipe_id nor flavor_ids are provided
+    // This is for backward compatibility with the original system
+    if (!recipe_id && !flavor_ids) {
+      return res.status(400).json({
+        message:
+          "Either recipe_id (for preset packs) or flavor_ids (for custom packs) must be provided",
+      });
     }
 
     // Get the pack recipe with its items and flavors
@@ -322,23 +334,69 @@ export const getUserCart = async (req: Request, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
 
-    const cart = cartLines.map((line) => ({
-      id: line.id,
-      product_id: line.productId,
-      recipe_id: line.recipeId,
-      recipe_title: line.packRecipe?.title || "Custom Pack",
-      recipe_kind: line.packRecipe?.kind || "Custom",
-      quantity: line.quantity,
-      unit_price: line.unitPrice,
-      total: line.quantity * line.unitPrice,
-      sku: line.sku,
-      items:
-        line.packRecipe?.items.map((item) => ({
-          flavor_id: item.flavor.id,
-          flavor_name: item.flavor.name,
-          quantity: item.quantity,
-        })) || [],
-    }));
+    // Fetch flavor details for custom packs
+    const customPackLines = cartLines.filter(
+      (line) => !line.recipeId && line.flavorIds && line.flavorIds.length > 0
+    );
+    const allFlavorIds = [
+      ...new Set(customPackLines.flatMap((line) => line.flavorIds)),
+    ];
+    const flavors =
+      allFlavorIds.length > 0
+        ? await prisma.flavor.findMany({
+            where: { id: { in: allFlavorIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+
+    const cart = cartLines.map((line) => {
+      // For custom packs (no recipeId), use flavorIds directly
+      if (!line.recipeId && line.flavorIds && line.flavorIds.length > 0) {
+        // This is a custom pack - use fetched flavor details
+        return {
+          id: line.id,
+          product_id: line.productId,
+          recipe_id: line.recipeId,
+          recipe_title: "Custom Pack",
+          recipe_kind: "Custom",
+          quantity: line.quantity,
+          unit_price: line.unitPrice,
+          total: line.quantity * line.unitPrice,
+          sku: line.sku,
+          items: line.flavorIds.map((flavorId) => {
+            const flavor = flavors.find((f) => f.id === flavorId);
+            return {
+              flavor_id: flavorId,
+              flavor_name:
+                flavor?.name ||
+                flavorId
+                  .replace(/_/g, " ")
+                  .replace(/\b\w/g, (l) => l.toUpperCase()),
+              quantity: 1,
+            };
+          }),
+        };
+      } else {
+        // This is a pre-defined pack
+        return {
+          id: line.id,
+          product_id: line.productId,
+          recipe_id: line.recipeId,
+          recipe_title: line.packRecipe?.title || "Custom Pack",
+          recipe_kind: line.packRecipe?.kind || "Custom",
+          quantity: line.quantity,
+          unit_price: line.unitPrice,
+          total: line.quantity * line.unitPrice,
+          sku: line.sku,
+          items:
+            line.packRecipe?.items.map((item) => ({
+              flavor_id: item.flavor.id,
+              flavor_name: item.flavor.name,
+              quantity: item.quantity,
+            })) || [],
+        };
+      }
+    });
 
     const cartTotal = cart.reduce((sum, line) => sum + line.total, 0);
 

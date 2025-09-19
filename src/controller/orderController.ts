@@ -41,30 +41,82 @@ export const createOrder = async (req: Request, res: Response) => {
           });
         }
 
-        // Verify product exists and has sufficient stock
-        const product = await prisma.product.findUnique({
-          where: { id: item.productId, isActive: true },
-        });
+        // Handle custom packs differently from regular products
+        if (item.productId === "3-pack" && item.isCustomPack) {
+          // For custom packs, validate flavors exist and have sufficient stock
+          if (
+            !item.flavorIds ||
+            !Array.isArray(item.flavorIds) ||
+            item.flavorIds.length !== 3
+          ) {
+            return res.status(400).json({
+              message: "Custom pack must have exactly 3 flavors",
+            });
+          }
 
-        if (!product) {
-          return res.status(400).json({
-            message: `Product not found: ${item.productId}`,
+          // Check if flavors exist and have sufficient stock
+          const flavors = await prisma.flavor.findMany({
+            where: { id: { in: item.flavorIds }, active: true },
+            include: { inventory: true },
           });
-        }
 
-        if (product.stock < item.quantity) {
-          return res.status(400).json({
-            message: `Insufficient stock for ${product.name}. Available: ${product.stock}, Requested: ${item.quantity}`,
+          if (flavors.length !== 3) {
+            return res.status(400).json({
+              message: "One or more flavors in custom pack are not available",
+            });
+          }
+
+          // Check inventory for each flavor
+          for (const flavor of flavors) {
+            const inventory = flavor.inventory[0];
+            if (!inventory) {
+              return res.status(400).json({
+                message: `No inventory found for flavor: ${flavor.name}`,
+              });
+            }
+
+            const available =
+              inventory.onHand - inventory.reserved - inventory.safetyStock;
+            if (available < item.quantity) {
+              return res.status(400).json({
+                message: `Insufficient stock for ${flavor.name}. Available: ${available}, Requested: ${item.quantity}`,
+              });
+            }
+          }
+        } else {
+          // Handle regular products
+          const product = await prisma.product.findUnique({
+            where: { id: item.productId, isActive: true },
           });
+
+          if (!product) {
+            return res.status(400).json({
+              message: `Product not found: ${item.productId}`,
+            });
+          }
+
+          if (product.stock < item.quantity) {
+            return res.status(400).json({
+              message: `Insufficient stock for ${product.name}. Available: ${product.stock}, Requested: ${item.quantity}`,
+            });
+          }
         }
 
         const itemTotal = item.price * item.quantity;
-        orderItemsToCreate.push({
+        const orderItem: any = {
           productId: item.productId,
           quantity: item.quantity,
           price: item.price,
           total: itemTotal,
-        });
+        };
+
+        // Add custom pack data if applicable
+        if (item.productId === "3-pack" && item.isCustomPack) {
+          orderItem.flavorIds = item.flavorIds;
+          orderItem.customPackName = item.customPackName || "Custom 3-Pack";
+        }
+
+        orderItemsToCreate.push(orderItem);
 
         calculatedTotal += itemTotal;
       }

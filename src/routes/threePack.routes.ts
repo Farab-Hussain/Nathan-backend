@@ -15,6 +15,7 @@ const router = express.Router();
 
 // Public routes
 router.get("/product", getThreePackProduct); // Get 3-pack product with variants
+router.get("/flavors", getAllFlavors); // Get all flavors (public)
 router.get("/inventory/availability", getInventoryAvailability); // Check inventory availability
 
 // Admin routes (authentication + admin role required)
