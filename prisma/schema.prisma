@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
@@ -15,45 +9,41 @@ datasource db {
 }
 
 model User {
-  id                      String    @id @default(cuid())
+  id                      String     @id @default(cuid())
   name                    String?
-  email                   String?   @unique
+  email                   String?    @unique
   password                String?
-  phone                   String?
   image                   String?
-  provider                String    @default("local")
-  providerId              String?   @unique
-  role                    String    @default("user")
-  isVerified              Boolean   @default(false)
-  verificationTokenHash   String?
-  verificationTokenExpiry DateTime?
+  provider                String     @default("local")
+  providerId              String?    @unique
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+  refreshToken            String?
   resetToken              String?
   resetTokenExpiry        DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-  refreshToken            String? // Store hashed refresh token
-
-  // Relations
-  // cartItems CartItem[] // COMMENTED OUT - ONLY USING 3-PACK CART
-  cartLines CartLine[]
-  orders    Order[]
+  role                    String     @default("user")
+  isVerified              Boolean    @default(false)
+  phone                   String?
+  verificationTokenExpiry DateTime?
+  verificationTokenHash   String?
+  CartItem                CartItem[]
+  cartLines               CartLine[]
+  orders                  Order[]
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  price       Float
-  stock       Int      @default(0)
-  category    String // Dynamic categories (admin configurable)
-  sku         String? // e.g., "3P-TRD-REDx3"
-  imageUrl    String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  // cartItems      CartItem[] // COMMENTED OUT - ONLY USING 3-PACK CART
+  id             String          @id @default(cuid())
+  name           String
+  description    String?
+  price          Float
+  stock          Int             @default(0)
+  category       String
+  imageUrl       String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sku            String?
+  CartItem       CartItem[]
   orderItems     OrderItem[]
   productFlavors ProductFlavor[]
 
@@ -63,14 +53,12 @@ model Product {
 }
 
 model ProductFlavor {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   productId String
   flavorId  String
   quantity  Int
-
-  // Relations
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  flavor  Flavor  @relation(fields: [flavorId], references: [id], onDelete: Cascade)
+  flavor    Flavor  @relation(fields: [flavorId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([productId, flavorId])
   @@index([productId])
@@ -78,19 +66,17 @@ model ProductFlavor {
 }
 
 model Order {
-  id              String   @id @default(cuid())
+  id              String      @id @default(cuid())
   userId          String
-  status          String   @default("pending") // pending, confirmed, shipped, delivered, cancelled
+  status          String      @default("pending")
   total           Float
   shippingAddress Json?
-  paymentStatus   String   @default("pending") // pending, paid, failed
+  paymentStatus   String      @default("pending")
   orderNotes      String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  // Relations
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orderItems OrderItem[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderItems      OrderItem[]
 
   @@index([userId])
   @@index([status])
@@ -105,6 +91,7 @@ model OrderItem {
   price     Float
   total     Float
   createdAt DateTime @default(now())
+<<<<<<< HEAD
 
   // Custom pack fields
   flavorIds      String[] // For custom packs
@@ -113,14 +100,18 @@ model OrderItem {
   // Relations
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
+=======
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+>>>>>>> 15f3bb174027e6f020001720bab9ca2d9b1dcce3
 
   @@index([orderId])
   @@index([productId])
   @@index([flavorIds])
 }
 
-// 3-Pack System Models
 model Flavor {
+<<<<<<< HEAD
   id        String   @id @default(cuid())
   name      String   @unique
   aliases   String[] // for search & import cleaning
@@ -130,38 +121,42 @@ model Flavor {
   updatedAt DateTime @updatedAt
 
   // Relations
+=======
+  id              String           @id @default(cuid())
+  name            String           @unique
+  aliases         String[]
+  active          Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  inventory       FlavorInventory?
+>>>>>>> 15f3bb174027e6f020001720bab9ca2d9b1dcce3
   packRecipeItems PackRecipeItem[]
-  inventory       FlavorInventory[]
   productFlavors  ProductFlavor[]
 
   @@index([active])
 }
 
 model PackRecipe {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   title     String
-  kind      String // Dynamic categories (admin configurable)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  items     PackRecipeItem[]
+  kind      String
+  active    Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
   cartLines CartLine[]
+  items     PackRecipeItem[]
 
   @@index([kind])
   @@index([active])
 }
 
 model PackRecipeItem {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   packRecipeId String
   flavorId     String
   quantity     Int
-
-  // Relations
-  packRecipe PackRecipe @relation(fields: [packRecipeId], references: [id], onDelete: Cascade)
-  flavor     Flavor     @relation(fields: [flavorId], references: [id])
+  flavor       Flavor     @relation(fields: [flavorId], references: [id])
+  packRecipe   PackRecipe @relation(fields: [packRecipeId], references: [id], onDelete: Cascade)
 
   @@unique([packRecipeId, flavorId])
   @@index([packRecipeId])
@@ -172,71 +167,62 @@ model FlavorInventory {
   id          String   @id @default(cuid())
   flavorId    String   @unique
   onHand      Int      @default(0)
-  reserved    Int      @default(0) // in open carts/orders
+  reserved    Int      @default(0)
   safetyStock Int      @default(5)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  // Relations
-  flavor Flavor @relation(fields: [flavorId], references: [id])
+  flavor      Flavor   @relation(fields: [flavorId], references: [id])
 
   @@index([flavorId])
 }
 
-// SINGLE PRODUCT CART MODEL - COMMENTED OUT (ONLY USING 3-PACK CART)
-/**
- * // Updated CartItem for 3-pack system
- * model CartItem {
- * id              String   @id @default(cuid())
- * userId          String
- * productId       String?
- * recipeId        String?
- * flavorIds       String[]
- * unitPrice       Float
- * sku             String
- * title           String
- * imageUrl        String?
- * stikersImgeUrl  String[]
- * stikersName     String[]
- * size            String?
- * sizeAndQuantity Json?
- * colorsName      String?
- * colorsCode      String?
- * options         Json
- * quantity        Int
- * total           Float
- * orderNotes      String?
- * createdAt       DateTime @default(now())
- * updatedAt       DateTime @updatedAt
- * // Relations
- * user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
- * product Product? @relation(fields: [productId], references: [id])
- * @@index([userId])
- * @@index([productId])
- * @@index([recipeId])
- * @@index([flavorIds])
- * }
- */
-
-// New CartLine for 3-pack system
 model CartLine {
-  id        String   @id @default(cuid())
-  userId    String
-  productId String // Dynamic product types (admin configurable)
-  recipeId  String?
-  flavorIds String[]
-  quantity  Int // number of 3-packs
-  unitPrice Float // Dynamic pricing (admin configurable)
-  sku       String // generated SKU
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String      @id @default(cuid())
+  userId     String
+  productId  String
+  recipeId   String?
+  quantity   Int
+  unitPrice  Float
+  sku        String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  flavorIds  String[]
   packRecipe PackRecipe? @relation(fields: [recipeId], references: [id], onDelete: Restrict)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([productId])
   @@index([recipeId])
   @@index([flavorIds])
+}
+
+model CartItem {
+  id              String   @id
+  userId          String
+  title           String
+  imageUrl        String?
+  stikersImgeUrl  String[]
+  stikersName     String[]
+  size            String?
+  sizeAndQuantity Json?
+  colorsName      String?
+  colorsCode      String?
+  options         Json
+  quantity        Int
+  total           Float
+  orderNotes      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+  productId       String?
+  recipeId        String?
+  sku             String
+  unitPrice       Float
+  flavorIds       String[]
+  Product         Product? @relation(fields: [productId], references: [id])
+  User            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([flavorIds])
+  @@index([productId])
+  @@index([recipeId])
+  @@index([userId])
 }

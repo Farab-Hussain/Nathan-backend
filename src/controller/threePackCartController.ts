@@ -1,3 +1,4 @@
+import { Flavor } from './../generated/prisma/index.d';
 import { Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
 import {
@@ -16,10 +17,25 @@ export const addToCart = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const { product_id, recipe_id, flavor_ids, qty } = req.body;
 
+<<<<<<< HEAD
     // Validate required fields - only product_id and qty are always required
     if (!product_id || !qty) {
       return res.status(400).json({
         message: "Missing required fields: product_id and qty are required",
+=======
+    // Validate required fields
+    if (!product_id || !qty) {
+      return res.status(400).json({
+        message:
+          "Missing required fields: product_id and qty are required",
+      });
+    }
+
+    // Either recipe_id or flavor_ids must be provided, but not both
+    if (!recipe_id && !flavor_ids) {
+      return res.status(400).json({
+        message: "Either recipe_id or flavor_ids must be provided",
+>>>>>>> 15f3bb174027e6f020001720bab9ca2d9b1dcce3
       });
     }
 
@@ -57,12 +73,12 @@ export const addToCart = async (req: Request, res: Response) => {
       }
 
       //Check for duplicates
-      const uniqueFlavors = [...new Set(flavor_ids)];
-      if (uniqueFlavors.length !== 3) {
-        return res.status(400).json({
-          message: "flavor_ids must contain exactly 3 unique flavors",
-        });
-      }
+      // const uniqueFlavors = [...new Set(flavor_ids)];
+      // if (uniqueFlavors.length !== 3) {
+      //   return res.status(400).json({
+      //     message: "flavor_ids must contain exactly 3 unique flavors",
+      //   });
+      // }
       //Fetch flavors details and check availability
       const flavors = await prisma.flavor.findMany({
         where: { id: { in: flavor_ids }, active: true },
@@ -79,7 +95,7 @@ export const addToCart = async (req: Request, res: Response) => {
 
       //Check inventory availability for flavors
       for (const flavor of flavors) {
-        const inventory = flavor.inventory[0];
+        const inventory = flavor.inventory;
         if (!inventory) {
           return res.status(400).json({
             message: `No inventory found for flavor: ${flavor.name}`,
@@ -132,7 +148,12 @@ export const addToCart = async (req: Request, res: Response) => {
       }
       //Reserve inventory for custom pack
       for (const flavor of flavors) {
-        const inventory = flavor.inventory[0];
+        const inventory = flavor.inventory;
+        if (!inventory) {
+          return res.status(400).json({
+            message: `No inventory found for flavor: ${flavor.name}`,
+          });
+        }
         await prisma.flavorInventory.update({
           where: { flavorId: flavor.id },
           data: {
@@ -205,7 +226,7 @@ export const addToCart = async (req: Request, res: Response) => {
 
     // Check inventory availability
     for (const item of packRecipe.items) {
-      const inventory = item.flavor.inventory[0];
+      const inventory = item.flavor.inventory;
       if (!inventory) {
         return res.status(400).json({
           message: `No inventory found for flavor: ${item.flavor.name}`,
@@ -283,7 +304,12 @@ export const addToCart = async (req: Request, res: Response) => {
 
     // Reserve inventory
     for (const item of packRecipe.items) {
-      const inventory = item.flavor.inventory[0];
+      const inventory = item.flavor.inventory;
+      if (!inventory) {
+        return res.status(400).json({
+          message: `No inventory found for flavor: ${item.flavor.name}`,
+        });
+      }
       const reserveAmount = item.quantity * requestedQty;
 
       await prisma.flavorInventory.update({
@@ -334,6 +360,7 @@ export const getUserCart = async (req: Request, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
 
+<<<<<<< HEAD
     // Fetch flavor details for custom packs
     const customPackLines = cartLines.filter(
       (line) => !line.recipeId && line.flavorIds && line.flavorIds.length > 0
@@ -357,12 +384,22 @@ export const getUserCart = async (req: Request, res: Response) => {
           id: line.id,
           product_id: line.productId,
           recipe_id: line.recipeId,
+=======
+    const cart = cartLines.map((line) => {
+      // Handle custom packs (no packRecipe)
+      if (!line.packRecipe && line.flavorIds.length > 0) {
+        return {
+          id: line.id,
+          product_id: line.productId,
+          recipe_id: null,
+>>>>>>> 15f3bb174027e6f020001720bab9ca2d9b1dcce3
           recipe_title: "Custom Pack",
           recipe_kind: "Custom",
           quantity: line.quantity,
           unit_price: line.unitPrice,
           total: line.quantity * line.unitPrice,
           sku: line.sku,
+<<<<<<< HEAD
           items: line.flavorIds.map((flavorId) => {
             const flavor = flavors.find((f) => f.id === flavorId);
             return {
@@ -396,14 +433,64 @@ export const getUserCart = async (req: Request, res: Response) => {
             })) || [],
         };
       }
+=======
+          items: line.flavorIds.map((flavorId) => ({
+            flavor_id: flavorId,
+            flavor_name: "Loading...", // Will be populated below
+            quantity: 1,
+          })),
+        };
+      }
+
+      // Handle predefined recipes (existing logic)
+      return {
+        id: line.id,
+        product_id: line.productId,
+        recipe_id: line.recipeId,
+        recipe_title: line.packRecipe?.title || "Custom Pack",
+        recipe_kind: line.packRecipe?.kind || "Custom",
+        quantity: line.quantity,
+        unit_price: line.unitPrice,
+        total: line.quantity * line.unitPrice,
+        sku: line.sku,
+        items:
+          line.packRecipe?.items.map((item) => ({
+            flavor_id: item.flavor.id,
+            flavor_name: item.flavor.name,
+            quantity: item.quantity,
+          })) || [],
+      };
+>>>>>>> 15f3bb174027e6f020001720bab9ca2d9b1dcce3
     });
 
     const cartTotal = cart.reduce((sum, line) => sum + line.total, 0);
 
+    // Populate flavor names for custom packs
+    const cartWithFlavorNames = await Promise.all(
+      cart.map(async (cartItem: any) => {
+        if (cartItem.recipe_kind === "Custom" && cartItem.items.length > 0) {
+          // Fetch flavors details for custom packs 
+          const flavors = await prisma.flavor.findMany({
+            where: { id: { in: cartItem.items.map((item: any) => item.flavor_id) } },
+            select: { id: true, name: true },
+          });
+
+          // Update the cart item with flavor names
+          cartItem.items = cartItem.items.map((item: any) => ({
+            ...item,
+            flavor_name: flavors.find(f => f.id === item.flavor_id)?.name || "Unknown Flavor"
+          }));
+        }
+        return cartItem;
+      })
+    );
+
+    const finalCartTotal = cartWithFlavorNames.reduce((sum: number, line: any) => sum + line.total, 0);
+
     res.json({
-      cart,
+      cart: cartWithFlavorNames,
       total_items: cartLines.length,
-      cart_total: cartTotal,
+      cart_total: finalCartTotal,
     });
   } catch (error) {
     console.error("Error fetching cart:", error);
@@ -454,52 +541,143 @@ export const updateCartLine = async (req: Request, res: Response) => {
     const newQty = parseInt(qty);
     const qtyDifference = newQty - cartLine.quantity;
 
-    if (!cartLine.packRecipe) {
-      return res.status(400).json({
-        message:
-          "Cannot update custom pack quantities. Remove and re-add to cart.",
+    if (!cartLine.packRecipe && cartLine.flavorIds.length > 0){
+      //fetch flavors details for custom packs
+      const flavors = await prisma.flavor.findMany({
+        where: {id : { in: cartLine.flavorIds}},
+        include:{ inventory:true},
       });
-    }
 
-    if (qtyDifference > 0) {
-      // Check if we can add more items
-      for (const item of cartLine.packRecipe.items) {
-        const inventory = item.flavor.inventory[0];
-        const required = item.quantity * qtyDifference;
-        const available =
-          inventory.onHand - inventory.reserved - inventory.safetyStock;
+      if (qtyDifference > 0 ) {
+        //Check if we can add more items for custom packs 
+        for (const flavor of flavors) {
+          const inventory = flavor.inventory;
+          if (!inventory){
+            return res.status(400).json({
+              message: `No inventory found for flavor: ${flavor.name}`,
+            });
+          }
+          const available = inventory.onHand - inventory.reserved - inventory.safetyStock;
+          if (available < qtyDifference) {
+            return res.status(400).json({
+              message: `Insufficient stock for ${flavor.name}. Available: ${available}, Required: ${qtyDifference}`,
+            });
+          }
+        }
 
-        if (available < required) {
-          return res.status(400).json({
-            message: `Insufficient stock for ${item.flavor.name}. Available: ${available}, Required: ${required}`,
+        //Reserve additional inventory for custom packs
+        for (const flavor of flavors){
+          const inventory = flavor.inventory;
+          if (!inventory) continue;
+
+          await prisma.flavorInventory.update({
+            where: {flavorId: flavor.id},
+            data:{
+              reserved: inventory.reserved + qtyDifference,
+            },
+          })
+        }
+
+      }
+      else if (qtyDifference < 0) {
+        for (const flavor of flavors ) {
+          const inventory = flavor.inventory;
+          if (!inventory) continue;
+
+          await prisma.flavorInventory.update({
+            where: {flavorId: flavor.id},
+            data:{
+              reserved: Math.max(0, inventory.reserved - Math.abs(qtyDifference)),
+            },
           });
         }
       }
 
-      // Reserve additional inventory
-      for (const item of cartLine.packRecipe.items) {
-        const inventory = item.flavor.inventory[0];
-        const reserveAmount = item.quantity * qtyDifference;
+      //Update cart line for custom pack 
+      const updateCartLine = await prisma.cartLine.update({
+        where: { id : cartLineId},
+        data:  {quantity: newQty},
+        
+      })
+      res.json({
+        message: "Custom pack quantity updated successfully",
+        cartLine:{
+          id : updateCartLine.id,
+          product_id : updateCartLine.productId,
+          recipe_id : null,
+          recipe_title : "Custom Pack",
+          quantity : updateCartLine.quantity,
+          unit_price : updateCartLine.unitPrice,
+          total : updateCartLine.quantity * updateCartLine.unitPrice,
+          sku : updateCartLine.sku,
+        },
+      });
+      return;
+    }
+    // if (!cartLine.packRecipe) {
+    //   return res.status(400).json({
+    //     message:
+    //       "Cannot update custom pack quantities. Remove and re-add to cart.",
+    //   });
+    // }
 
-        await prisma.flavorInventory.update({
-          where: { flavorId: item.flavor.id },
-          data: {
-            reserved: inventory.reserved + reserveAmount,
-          },
-        });
-      }
-    } else if (qtyDifference < 0) {
-      // Release inventory
-      for (const item of cartLine.packRecipe.items) {
-        const inventory = item.flavor.inventory[0];
-        const releaseAmount = item.quantity * Math.abs(qtyDifference);
+    // Handle predefined recipes
+    if (cartLine.packRecipe) {
+      if (qtyDifference > 0) {
+        // Check if we can add more items
+        for (const item of cartLine.packRecipe.items) {
+          const inventory = item.flavor.inventory;
+          if (!inventory) {
+            return res.status(400).json({
+              message: `No inventory found for flavor: ${item.flavor.name}`,
+            });
+          }
+          const required = item.quantity * qtyDifference;
+          const available =
+            inventory.onHand - inventory.reserved - inventory.safetyStock;
 
-        await prisma.flavorInventory.update({
-          where: { flavorId: item.flavor.id },
-          data: {
-            reserved: Math.max(0, inventory.reserved - releaseAmount),
-          },
-        });
+          if (available < required) {
+            return res.status(400).json({
+              message: `Insufficient stock for ${item.flavor.name}. Available: ${available}, Required: ${required}`,
+            });
+          }
+        }
+
+        // Reserve additional inventory
+        for (const item of cartLine.packRecipe.items) {
+          const inventory = item.flavor.inventory;
+          if (!inventory) {
+            return res.status(400).json({
+              message: `No inventory found for flavor: ${item.flavor.name}`,
+            });
+          }
+          const reserveAmount = item.quantity * qtyDifference;
+
+          await prisma.flavorInventory.update({
+            where: { flavorId: item.flavor.id },
+            data: {
+              reserved: inventory.reserved + reserveAmount,
+            },
+          });
+        }
+      } else if (qtyDifference < 0) {
+        // Release inventory
+        for (const item of cartLine.packRecipe.items) {
+          const inventory = item.flavor.inventory;
+          if (!inventory) {
+            return res.status(400).json({
+              message: `No inventory found for flavor: ${item.flavor.name}`,
+            });
+          }
+          const releaseAmount = item.quantity * Math.abs(qtyDifference);
+
+          await prisma.flavorInventory.update({
+            where: { flavorId: item.flavor.id },
+            data: {
+              reserved: Math.max(0, inventory.reserved - releaseAmount),
+            },
+          });
+        }
       }
     }
 
@@ -573,19 +751,67 @@ export const removeCartLine = async (req: Request, res: Response) => {
     }
 
     // Release reserved inventory
-    if (cartLine.packRecipe) {
+    
+    if(cartLine.packRecipe){
+      //Handle predefined recipes
       for (const item of cartLine.packRecipe.items) {
-        const inventory = item.flavor.inventory[0];
+        const inventory = item.flavor.inventory;
+        if(!inventory){
+          return res.status(400).json({
+            message: `No inventory found for flavor : ${item.flavor.name}`
+          });
+        }
+
         const releaseAmount = item.quantity * cartLine.quantity;
 
         await prisma.flavorInventory.update({
-          where: { flavorId: item.flavor.id },
-          data: {
-            reserved: Math.max(0, inventory.reserved - releaseAmount),
-          },
-        });
+          where: {flavorId: item.flavor.id},
+          data:{reserved: Math.max(0,inventory.reserved - releaseAmount)}
+        })
+
+      }
+    }else if (cartLine.flavorIds.length > 0){
+      //handle custom packs
+      const flavors = await prisma.flavor.findMany({
+        where:{ id: { in : cartLine.flavorIds}},
+        include:{ inventory:true},
+      });
+      for (const flavor of flavors) {
+        const inventory = flavor.inventory;
+        if(!inventory){
+          console.warn(`No inventory found for flavor : ${flavor.name}`);
+          continue;
+        }
+
+        await prisma.flavorInventory.update({
+          where : {flavorId: flavor.id},
+          data:{reserved: Math.max(0,inventory.reserved - cartLine.quantity)}
+        })
+
       }
     }
+
+
+    // if (cartLine.packRecipe) {
+    //   for (const item of cartLine.packRecipe.items) {
+    //     const inventory = item.flavor.inventory;
+    //     if (!inventory) {
+    //       return res.status(400).json({
+    //         message: `No inventory found for flavor: ${item.flavor.name}`,
+    //       });
+    //     }
+    //     const releaseAmount = item.quantity * cartLine.quantity;
+
+    //     await prisma.flavorInventory.update({
+    //       where: { flavorId: item.flavor.id },
+    //       data: {
+    //         reserved: Math.max(0, inventory.reserved - releaseAmount),
+    //       },
+    //     });
+    //   }
+    // }
+
+
 
     // Delete cart line
     await prisma.cartLine.delete({
@@ -598,6 +824,7 @@ export const removeCartLine = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error removing cart line" });
   }
 };
+
 
 // Clear entire cart
 export const clearCart = async (req: Request, res: Response) => {
@@ -627,14 +854,39 @@ export const clearCart = async (req: Request, res: Response) => {
     // Release all reserved inventory
     for (const cartLine of cartLines) {
       if (cartLine.packRecipe) {
+        // Handle predefined recipes
         for (const item of cartLine.packRecipe.items) {
-          const inventory = item.flavor.inventory[0];
+          const inventory = item.flavor.inventory;
+          if (!inventory) {
+            continue; // Skip if no inventory found
+          }
           const releaseAmount = item.quantity * cartLine.quantity;
 
           await prisma.flavorInventory.update({
             where: { flavorId: item.flavor.id },
             data: {
               reserved: Math.max(0, inventory.reserved - releaseAmount),
+            },
+          });
+        }
+      } else if (cartLine.flavorIds.length > 0) {
+        // Handle custom packs
+        const flavors = await prisma.flavor.findMany({
+          where: { id: { in: cartLine.flavorIds } },
+          include: { inventory: true },
+        });
+
+        for (const flavor of flavors) {
+          const inventory = flavor.inventory;
+          if (!inventory) {
+            console.warn(`No inventory found for custom pack flavor: ${flavor.name}`);
+            continue;
+          }
+
+          await prisma.flavorInventory.update({
+            where: { flavorId: flavor.id },
+            data: {
+              reserved: Math.max(0, inventory.reserved - cartLine.quantity),
             },
           });
         }

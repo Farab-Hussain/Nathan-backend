@@ -414,3 +414,23 @@ export const getCategories = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error fetching categories" });
   }
 };
+
+// Get all flavors (public endpoint for product management)
+export const getAllFlavors = async (req: Request, res: Response) => {
+  try {
+    const flavors = await prisma.flavor.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        aliases: true,
+        active: true,
+      },
+    });
+
+    res.json({ flavors });
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching flavors" });
+  }
+};

@@ -31,21 +31,21 @@ export const createRateLimit = (windowMs: number, max: number, message?: string)
 // General rate limit
 export const generalRateLimit = createRateLimit(
   parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
-  parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'), // 100 requests per window
+  parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '500'), // 500 requests per window (increased from 100)
   'Too many requests from this IP, please try again later.'
 );
 
-// Strict rate limit for auth endpoints (login, register, etc.)
-export const authRateLimit = createRateLimit(
-  15 * 60 * 1000, // 15 minutes
-  10, // 10 attempts per window (increased from 5)
-  'Too many authentication attempts, please try again later.'
-);
+// Strict rate limit for auth endpoints (login, register, etc.) - COMMENTED OUT FOR NOW
+// export const authRateLimit = createRateLimit(
+//   15 * 60 * 1000, // 15 minutes
+//   10, // 10 attempts per window (increased from 5)
+//   'Too many authentication attempts, please try again later.'
+// );
 
 // More lenient rate limit for /me endpoint
 export const meRateLimit = createRateLimit(
   5 * 60 * 1000, // 5 minutes
-  20, // 20 requests per 5 minutes
+  100, // 100 requests per 5 minutes (increased from 20)
   'Too many requests to user profile, please try again later.'
 );
 
