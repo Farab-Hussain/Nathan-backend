@@ -200,11 +200,22 @@ router.post("/webhook", async (req, res) => {
           const stripeEmail = session.customer_details?.email || compressedData.address?.email;
           const stripeName = session.customer_details?.name || compressedData.address?.name;
           
+          // Debug: Log the full session to see what's available
+          console.log("🔍 Stripe session debug:", {
+            hasShipping: !!(session as any).shipping,
+            hasCustomerDetails: !!session.customer_details,
+            hasShippingDetails: !!(session as any).shipping_details,
+            sessionKeys: Object.keys(session),
+            customerDetails: session.customer_details,
+            shipping: (session as any).shipping,
+            shipping_details: (session as any).shipping_details
+          });
+
           // Get shipping address from Stripe checkout or fallback to metadata
           let shippingAddress;
-          if ((session as any).shipping) {
+          if ((session as any).shipping_details) {
             // Use address collected by Stripe checkout
-            const shipping = (session as any).shipping;
+            const shipping = (session as any).shipping_details;
             shippingAddress = {
               name: shipping.name || stripeName,
               email: stripeEmail,
@@ -233,7 +244,19 @@ router.post("/webhook", async (req, res) => {
             console.log("📦 Using frontend-provided shipping address:", shippingAddress);
           } else {
             console.error("❌ No shipping address available from Stripe or metadata");
+            console.log("🔍 Available session data:", {
+              sessionId: session.id,
+              customerDetails: session.customer_details,
+              metadata: session.metadata,
+              compressedData: compressedData
+            });
             return res.status(400).json({ error: "Shipping address required" });
+          }
+
+          // Validate that we have a complete address
+          if (!shippingAddress.street1 || !shippingAddress.city || !shippingAddress.state || !shippingAddress.zip || !shippingAddress.country) {
+            console.error("❌ Incomplete shipping address:", shippingAddress);
+            return res.status(400).json({ error: "Complete shipping address required" });
           }
           
           const orderData = {
@@ -519,9 +542,13 @@ router.post("/create-checkout-session", async (req, res) => {
       metadata,
       // Pre-fill customer email with authenticated user's email
       customer_email: dbUser.email || undefined,
+      // Enable shipping address collection
       shipping_address_collection: {
         allowed_countries: ["US", "CA"],
       },
+      // Add billing address collection as well
+      billing_address_collection: "required",
+      // Add shipping options
       shipping_options: [
         {
           shipping_rate_data: {
