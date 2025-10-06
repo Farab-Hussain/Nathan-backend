@@ -401,12 +401,21 @@ export const getUserOrders = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const { status, page = 1, limit = 10 } = req.query;
 
+    console.log("🔍 Fetching orders for user:", {
+      userId: user.id,
+      status: status || 'all',
+      page: parseInt(page as string),
+      limit: parseInt(limit as string)
+    });
+
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
     const where: any = { userId: user.id };
     if (status) {
       where.status = status;
     }
+
+    console.log("📋 Order query where clause:", where);
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
@@ -425,6 +434,13 @@ export const getUserOrders = async (req: Request, res: Response) => {
       prisma.order.count({ where }),
     ]);
 
+    console.log("📊 Order query results:", {
+      ordersFound: orders.length,
+      totalOrders: total,
+      orderIds: orders.map(o => o.id),
+      orderDates: orders.map(o => o.createdAt)
+    });
+
     res.json({
       orders,
       pagination: {
@@ -435,6 +451,7 @@ export const getUserOrders = async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
+    console.error("❌ Error fetching orders:", err);
     res.status(500).json({ message: "Error fetching orders" });
   }
 };

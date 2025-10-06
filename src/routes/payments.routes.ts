@@ -19,6 +19,28 @@ router.post("/create-checkout-session", async (req, res) => {
       return res.status(503).json({ message: "Stripe not configured" });
     }
 
+    // Get authenticated user
+    const user = (req as any).user;
+    if (!user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    // Get user details from database
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true, name: true }
+    });
+
+    if (!dbUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    console.log("👤 Creating checkout session for user:", {
+      userId: dbUser.id,
+      email: dbUser.email,
+      name: dbUser.name
+    });
+
     const { orderId, orderData, items, successUrl, cancelUrl } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "No items provided" });
@@ -35,7 +57,11 @@ router.post("/create-checkout-session", async (req, res) => {
 
     // Store order data in Stripe metadata for webhook processing
     // NO order created in database until successful payment
-    const metadata: any = {};
+    const metadata: any = {
+      // Always store the authenticated user ID
+      authenticatedUserId: dbUser.id,
+      authenticatedUserEmail: dbUser.email
+    };
     
     if (orderId) {
       // Existing order (retry payment)
@@ -82,6 +108,8 @@ router.post("/create-checkout-session", async (req, res) => {
         `${process.env.CLIENT_URL}/orders/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: cancelUrl || `${process.env.CLIENT_URL}/cart`,
       metadata,
+      // Pre-fill customer email with authenticated user's email
+      customer_email: dbUser.email || undefined,
       shipping_address_collection: {
         allowed_countries: ["US", "CA"],
       },
@@ -504,24 +532,38 @@ router.post("/webhook", async (req, res) => {
         
         try {
           const compressedData = JSON.parse(session.metadata.orderData);
-          const customerEmail = session.customer_details?.email;
+          const authenticatedUserId = session.metadata.authenticatedUserId;
+          const authenticatedUserEmail = session.metadata.authenticatedUserEmail;
           
-          if (!customerEmail) {
-            console.error("❌ No customer email in session");
-            return res.status(400).json({ error: "Customer email required" });
+          if (!authenticatedUserId) {
+            console.error("❌ No authenticated user ID in session metadata");
+            return res.status(400).json({ error: "Authenticated user ID required" });
           }
 
-          // Find user by email
+          // Use the authenticated user ID directly (no need to find by email)
           const user = await prisma.user.findUnique({
-            where: { email: customerEmail },
+            where: { id: authenticatedUserId }
           });
 
           if (!user) {
-            console.error("❌ User not found for email:", customerEmail);
-            return res.status(404).json({ error: "User not found" });
+            console.error("❌ Authenticated user not found:", authenticatedUserId);
+            return res.status(404).json({ error: "Authenticated user not found" });
           }
 
+          console.log("👤 Using authenticated user for order creation:", {
+            userId: user.id,
+            email: user.email,
+            authenticatedEmail: authenticatedUserEmail,
+            stripeEmail: session.customer_details?.email,
+            provider: user.provider,
+            createdAt: user.createdAt
+          });
+
           // Reconstruct full order data
+          // Use Stripe email for shipping but authenticated user for order ownership
+          const stripeEmail = session.customer_details?.email || compressedData.address.email;
+          const stripeName = session.customer_details?.name || compressedData.address.name;
+          
           const orderData = {
             total: compressedData.total,
             orderNotes: compressedData.notes,
@@ -534,8 +576,8 @@ router.post("/webhook", async (req, res) => {
               customPackName: item.custom,
             })),
             shippingAddress: {
-              name: compressedData.address.name,
-              email: compressedData.address.email,
+              name: stripeName,
+              email: stripeEmail, // Use Stripe email for shipping
               phone: compressedData.address.phone,
               street1: compressedData.address.street,
               city: compressedData.address.city,

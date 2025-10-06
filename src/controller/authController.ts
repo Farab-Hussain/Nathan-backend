@@ -45,12 +45,21 @@ export const register = async (req: Request, res: Response) => {
 
     const token = generateToken(String(newUser.id), newUser.role);
 
+    // Determine cookie domain based on environment and request origin
+    let cookieDomain = undefined;
+    if (process.env.NODE_ENV === "production") {
+      cookieDomain = "licorice4good.com";
+    } else if (req.headers.origin?.includes('localhost')) {
+      // For local development, don't set domain to allow localhost access
+      cookieDomain = undefined;
+    }
+
     res
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        domain: process.env.NODE_ENV === "production" ? "licorice4good.com" : undefined,
+        domain: cookieDomain,
         path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
@@ -105,12 +114,21 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const token = generateToken(String(user.id), user.role);
+    // Determine cookie domain based on environment and request origin
+    let cookieDomain = undefined;
+    if (process.env.NODE_ENV === "production") {
+      cookieDomain = "licorice4good.com";
+    } else if (req.headers.origin?.includes('localhost')) {
+      // For local development, don't set domain to allow localhost access
+      cookieDomain = undefined;
+    }
+
     res
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        domain: process.env.NODE_ENV === "production" ? "licorice4good.com" : undefined,
+        domain: cookieDomain,
         path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
@@ -193,11 +211,20 @@ export const resetPassword = async (req: Request, res: Response) => {
 };
 
 export const logout = (req: Request, res: Response) => {
+  // Determine cookie domain based on environment and request origin
+  let cookieDomain = undefined;
+  if (process.env.NODE_ENV === "production") {
+    cookieDomain = "licorice4good.com";
+  } else if (req.headers.origin?.includes('localhost')) {
+    // For local development, don't set domain to allow localhost access
+    cookieDomain = undefined;
+  }
+
   res.clearCookie("token", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    domain: process.env.NODE_ENV === "production" ? "licorice4good.com" : undefined,
+    domain: cookieDomain,
     path: "/",
   });
   res.status(200).json({ message: "Logged out successfully", user: null });

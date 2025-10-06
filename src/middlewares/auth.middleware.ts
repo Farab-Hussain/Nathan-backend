@@ -26,6 +26,17 @@ export const protect = (req: Request, res: Response, next: NextFunction) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as DecodedToken;
     (req as any).user = { id: decoded.id, role: decoded.role };
+    
+    // Debug logging for order-related requests
+    if (req.path.includes('/orders')) {
+      console.log("🔐 Auth middleware - User authenticated:", {
+        userId: decoded.id,
+        role: decoded.role,
+        path: req.path,
+        method: req.method
+      });
+    }
+    
     next();
   } catch {
     // Token is invalid or expired
