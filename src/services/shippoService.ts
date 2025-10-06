@@ -201,6 +201,17 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
   try {
     const shippo = getShippoClient();
     
+    // Validate address data before creating transaction
+    const address = shipmentData.toAddress;
+    if (!address.name || !address.street1 || !address.city || !address.state || !address.zip || !address.country) {
+      throw new Error('Invalid address data: Missing required fields');
+    }
+    
+    // Check for test/fake addresses
+    if (address.street1 === 'test' || address.city === 'test' || address.name === 'test') {
+      console.warn('⚠️ Using test address data - this may cause Shippo transaction failures');
+    }
+    
     // Create shipment
     const shipment = await shippo.shipments.create({
       addressFrom: DEFAULT_SENDER_ADDRESS,
@@ -220,6 +231,22 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
     });
 
     // Purchase the selected rate
+    console.log('💳 Creating Shippo transaction:', {
+      rateId: selectedRateId,
+      labelFileType: 'PDF',
+      shipmentData: {
+        toAddress: {
+          name: shipmentData.toAddress.name,
+          street1: shipmentData.toAddress.street1,
+          city: shipmentData.toAddress.city,
+          state: shipmentData.toAddress.state,
+          zip: shipmentData.toAddress.zip,
+          country: shipmentData.toAddress.country
+        },
+        parcels: shipmentData.parcels
+      }
+    });
+    
     const transaction = await shippo.transactions.create({
       rate: selectedRateId,
       labelFileType: 'PDF',
@@ -262,43 +289,95 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
       }
     }
 
+    // Check if transaction failed
+    if (transaction.status === 'ERROR') {
+      console.error('❌ Shippo transaction failed:', {
+        objectId: transaction.objectId,
+        status: transaction.status,
+        messages: transaction.messages || [],
+        rate: transaction.rate,
+        shipmentData: {
+          toAddress: {
+            name: shipmentData.toAddress.name,
+            street1: shipmentData.toAddress.street1,
+            city: shipmentData.toAddress.city,
+            state: shipmentData.toAddress.state,
+            zip: shipmentData.toAddress.zip,
+            country: shipmentData.toAddress.country
+          },
+          parcels: shipmentData.parcels
+        }
+      });
+      
+      // Log detailed error information
+      if (transaction.messages && transaction.messages.length > 0) {
+        console.error('📋 Detailed error messages:', transaction.messages.map(msg => ({
+          source: msg.source,
+          code: msg.code,
+          text: msg.text
+        })));
+      }
+      
+      // Don't create fake tracking data for failed transactions
+      const errorMessage = transaction.messages?.map(m => `${m.source}: ${m.text}`).join('; ') || 'Unknown error';
+      throw new Error(`Shippo transaction failed: ${errorMessage}`);
+    }
+
+    // Only proceed if transaction is successful
+    if (transaction.status !== 'SUCCESS') {
+      console.warn('⚠️ Transaction not successful:', {
+        status: transaction.status,
+        objectId: transaction.objectId
+      });
+      throw new Error(`Shippo transaction not successful: ${transaction.status}`);
+    }
+
     // Get real tracking data from Shippo
-    const trackingNumber = transaction.trackingNumber || `SHIPPO-${transaction.objectId?.substring(0, 8).toUpperCase() || 'UNKNOWN'}`;
+    const trackingNumber = transaction.trackingNumber;
+    
+    if (!trackingNumber) {
+      console.error('❌ No tracking number provided by Shippo');
+      throw new Error('No tracking number provided by Shippo');
+    }
     
     // Try to get real carrier tracking URL
     let trackingUrl = transaction.trackingUrlProvider;
     
     // If no tracking URL provided, generate carrier-specific URL
-    if (!trackingUrl && transaction.trackingNumber) {
+    if (!trackingUrl && trackingNumber) {
       const carrier = (typeof transaction.rate === 'object' ? transaction.rate?.provider : '') || '';
+      
+      console.log('🔍 Generating tracking URL for carrier:', carrier);
       
       switch (carrier?.toLowerCase()) {
         case 'usps':
-          trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=${transaction.trackingNumber}`;
+          trackingUrl = `https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=${trackingNumber}`;
           break;
         case 'ups':
-          trackingUrl = `https://www.ups.com/track?track=yes&trackNums=${transaction.trackingNumber}`;
+          trackingUrl = `https://www.ups.com/track?track=yes&trackNums=${trackingNumber}`;
           break;
         case 'fedex':
-          trackingUrl = `https://www.fedex.com/fedextrack/?trknbr=${transaction.trackingNumber}`;
+          trackingUrl = `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
           break;
         case 'dhl':
-          trackingUrl = `https://www.dhl.com/us-en/home/tracking.html?trackingNumber=${transaction.trackingNumber}`;
+          trackingUrl = `https://www.dhl.com/us-en/home/tracking.html?trackingNumber=${trackingNumber}`;
           break;
         default:
+          console.warn('⚠️ Unknown carrier, using Shippo tracking:', carrier);
           trackingUrl = `https://goshippo.com/track/${trackingNumber}`;
       }
     }
     
-    // Fallback to Shippo tracking if still no URL
+    // Final fallback - should rarely happen for successful transactions
     if (!trackingUrl) {
+      console.warn('⚠️ No tracking URL available, using Shippo fallback');
       trackingUrl = `https://goshippo.com/track/${trackingNumber}`;
     }
     
     const labelUrl = transaction.labelUrl || `https://goshippo.com/label/${transaction.objectId || 'unknown'}`;
 
     // Extract carrier and service information
-    const carrier = (typeof transaction.rate === 'object' ? transaction.rate?.provider : '') || 'Shippo';
+    const carrier = (typeof transaction.rate === 'object' ? transaction.rate?.provider : '') || 'Unknown';
     const service = (typeof transaction.rate === 'object' ? transaction.rate?.servicelevelName : '') || 'Standard';
     const cost = typeof transaction.rate === 'object' ? parseFloat(transaction.rate?.amount || '0') : 0;
 

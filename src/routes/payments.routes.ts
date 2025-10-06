@@ -197,8 +197,44 @@ router.post("/webhook", async (req, res) => {
 
           // Reconstruct full order data
           // Use Stripe email for shipping but authenticated user for order ownership
-          const stripeEmail = session.customer_details?.email || compressedData.address.email;
-          const stripeName = session.customer_details?.name || compressedData.address.name;
+          const stripeEmail = session.customer_details?.email || compressedData.address?.email;
+          const stripeName = session.customer_details?.name || compressedData.address?.name;
+          
+          // Get shipping address from Stripe checkout or fallback to metadata
+          let shippingAddress;
+          if ((session as any).shipping) {
+            // Use address collected by Stripe checkout
+            const shipping = (session as any).shipping;
+            shippingAddress = {
+              name: shipping.name || stripeName,
+              email: stripeEmail,
+              phone: shipping.phone || '',
+              street1: shipping.address.line1,
+              street2: shipping.address.line2 || '',
+              city: shipping.address.city,
+              state: shipping.address.state,
+              zip: shipping.address.postal_code,
+              country: shipping.address.country,
+            };
+            console.log("📦 Using Stripe-collected shipping address:", shippingAddress);
+          } else if (compressedData.address) {
+            // Fallback to address from frontend metadata
+            shippingAddress = {
+              name: stripeName,
+              email: stripeEmail,
+              phone: compressedData.address.phone || '',
+              street1: compressedData.address.street,
+              street2: compressedData.address.street2 || '',
+              city: compressedData.address.city,
+              state: compressedData.address.state,
+              zip: compressedData.address.zip,
+              country: compressedData.address.country,
+            };
+            console.log("📦 Using frontend-provided shipping address:", shippingAddress);
+          } else {
+            console.error("❌ No shipping address available from Stripe or metadata");
+            return res.status(400).json({ error: "Shipping address required" });
+          }
           
           const orderData = {
             total: compressedData.total,
@@ -211,16 +247,7 @@ router.post("/webhook", async (req, res) => {
               flavorIds: item.flavors,
               customPackName: item.custom,
             })),
-            shippingAddress: {
-              name: stripeName,
-              email: stripeEmail, // Use Stripe email for shipping
-              phone: compressedData.address.phone,
-              street1: compressedData.address.street,
-              city: compressedData.address.city,
-              state: compressedData.address.state,
-              zip: compressedData.address.zip,
-              country: compressedData.address.country,
-            }
+            shippingAddress: shippingAddress
           };
 
           // Create order with confirmed status and paid payment status
@@ -461,15 +488,16 @@ router.post("/create-checkout-session", async (req, res) => {
           flavors: item.flavorIds || [],
           custom: item.customPackName || null,
         })),
-        address: {
-          name: orderData.shippingAddress.name,
-          email: orderData.shippingAddress.email,
-          phone: orderData.shippingAddress.phone,
-          street: orderData.shippingAddress.street,
-          city: orderData.shippingAddress.city,
-          state: orderData.shippingAddress.state,
-          zip: orderData.shippingAddress.zipCode,
-          country: orderData.shippingAddress.country,
+        // Address will be collected by Stripe checkout
+        address: orderData.shippingAddress || {
+          name: '',
+          email: '',
+          phone: '',
+          street: '',
+          city: '',
+          state: '',
+          zip: '',
+          country: '',
         }
       };
       
