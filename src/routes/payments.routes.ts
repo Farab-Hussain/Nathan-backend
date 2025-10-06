@@ -315,36 +315,61 @@ router.post("/webhook", async (req, res) => {
             shippingAddress: shippingAddress
           };
 
-          // Create order with confirmed status and paid payment status
-          const newOrder = await prisma.order.create({
-            data: {
-              userId: user.id,
-              status: "confirmed",
-              paymentStatus: "paid",
+          // Create order using the orderController to ensure stock reduction
+          const { createOrder } = await import("../controller/orderController");
+          
+          // Create a mock request object for the createOrder function
+          const mockReq = {
+            user: { id: user.id },
+            body: {
+              orderItems: orderData.orderItems,
               total: orderData.total,
               shippingAddress: orderData.shippingAddress,
               orderNotes: orderData.orderNotes,
-              orderItems: {
-                create: orderData.orderItems.map((item: any) => ({
-                  productId: item.productId,
-                  quantity: item.quantity,
-                  price: item.price,
-                  total: item.total,
-                  flavorIds: item.flavorIds || [],
-                  customPackName: item.customPackName || null,
-                })),
-              },
+            }
+          } as any;
+          
+          const mockRes = {
+            status: (code: number) => ({
+              json: (data: any) => {
+                if (code >= 400) {
+                  throw new Error(`Order creation failed: ${JSON.stringify(data)}`);
+                }
+                return { statusCode: code, data };
+              }
+            }),
+            json: (data: any) => ({ statusCode: 200, data })
+          } as any;
+          
+          // Call createOrder function to ensure stock reduction
+          await createOrder(mockReq, mockRes);
+          
+          // Get the created order
+          const newOrder = await prisma.order.findFirst({
+            where: { userId: user.id },
+            orderBy: { createdAt: 'desc' },
+            include: { orderItems: true }
+          });
+          
+          if (!newOrder) {
+            throw new Error('Order creation failed - no order found');
+          }
+
+          // Update order status to confirmed and payment status to paid
+          const updatedOrder = await prisma.order.update({
+            where: { id: newOrder.id },
+            data: {
+              status: "confirmed",
+              paymentStatus: "paid",
             },
-            include: {
-              orderItems: true,
-            },
+            include: { orderItems: true }
           });
 
           console.log("✅ Order created from payment:", {
-            orderId: newOrder.id,
-            status: newOrder.status,
-            paymentStatus: newOrder.paymentStatus,
-            total: newOrder.total,
+            orderId: updatedOrder.id,
+            status: updatedOrder.status,
+            paymentStatus: updatedOrder.paymentStatus,
+            total: updatedOrder.total,
           });
 
           // Create Shippo shipment for the new order
@@ -376,7 +401,7 @@ router.post("/webhook", async (req, res) => {
             if (rates.length > 0) {
               // Use the first rate
               await createShipment({
-                orderId: newOrder.id,
+                orderId: updatedOrder.id,
                 toAddress: orderData.shippingAddress as any,
                 parcels: [{
                   length: '6',
