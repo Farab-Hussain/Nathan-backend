@@ -312,7 +312,13 @@ router.post("/webhook", async (req, res) => {
               flavorIds: item.flavors,
               customPackName: item.custom,
             })),
-            shippingAddress: shippingAddress
+            shippingAddress: {
+              street: shippingAddress.street1,
+              city: shippingAddress.city,
+              state: shippingAddress.state,
+              zipCode: shippingAddress.zip,
+              country: shippingAddress.country,
+            }
           };
 
           // Create order using the orderController to ensure stock reduction
@@ -376,18 +382,31 @@ router.post("/webhook", async (req, res) => {
           try {
             const { getShippingRates, createShipment } = await import("../services/shippoService");
             
+            // Convert address format for Shippo service
+            const shippoAddress = {
+              name: shippingAddress.name,
+              street1: shippingAddress.street1,
+              street2: shippingAddress.street2,
+              city: shippingAddress.city,
+              state: shippingAddress.state,
+              zip: shippingAddress.zip,
+              country: shippingAddress.country,
+              email: shippingAddress.email,
+              phone: shippingAddress.phone,
+            };
+            
             console.log("🔍 Getting shipping rates for address:", {
-              name: orderData.shippingAddress.name,
-              street1: orderData.shippingAddress.street1,
-              city: orderData.shippingAddress.city,
-              state: orderData.shippingAddress.state,
-              zip: orderData.shippingAddress.zip,
-              country: orderData.shippingAddress.country,
+              name: shippoAddress.name,
+              street1: shippoAddress.street1,
+              city: shippoAddress.city,
+              state: shippoAddress.state,
+              zip: shippoAddress.zip,
+              country: shippoAddress.country,
             });
             
             // First get shipping rates
             const rates = await getShippingRates(
-              orderData.shippingAddress as any,
+              shippoAddress,
               [{
                 length: '6',
                 width: '4',
@@ -402,7 +421,7 @@ router.post("/webhook", async (req, res) => {
               // Use the first rate
               await createShipment({
                 orderId: updatedOrder.id,
-                toAddress: orderData.shippingAddress as any,
+                toAddress: shippoAddress,
                 parcels: [{
                   length: '6',
                   width: '4',
