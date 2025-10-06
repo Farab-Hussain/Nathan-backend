@@ -19,6 +19,7 @@ export const validateShippingAddress = async (req: Request, res: Response) => {
       isValid: result.isValid,
       validatedAddress: result.validatedAddress,
       suggestions: result.suggestions,
+      message: result.isValid ? 'Address validated successfully' : 'Address validation completed with suggestions'
     });
   } catch (error) {
     console.error('Address validation error:', error);

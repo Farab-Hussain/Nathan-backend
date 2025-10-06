@@ -50,10 +50,7 @@ export const register = async (req: Request, res: Response) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        domain:
-          process.env.NODE_ENV === "production"
-            ? ".licorice4good.com"
-            : undefined,
+        domain: process.env.NODE_ENV === "production" ? "licorice4good.com" : undefined,
         path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
@@ -113,10 +110,7 @@ export const login = async (req: Request, res: Response) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-        domain:
-          process.env.NODE_ENV === "production"
-            ? ".licorice4good.com"
-            : undefined,
+        domain: process.env.NODE_ENV === "production" ? "licorice4good.com" : undefined,
         path: "/",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       })
@@ -203,8 +197,7 @@ export const logout = (req: Request, res: Response) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    domain:
-      process.env.NODE_ENV === "production" ? ".licorice4good.com" : undefined,
+    domain: process.env.NODE_ENV === "production" ? "licorice4good.com" : undefined,
     path: "/",
   });
   res.status(200).json({ message: "Logged out successfully", user: null });

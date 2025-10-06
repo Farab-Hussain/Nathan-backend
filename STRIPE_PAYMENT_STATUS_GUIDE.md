@@ -153,3 +153,6 @@ Admin Action → Backend → Database Update
 1. **Status Endpoint**: GET endpoint to check current Stripe payment status
 2. **Sync Endpoint**: POST endpoint to manually sync with Stripe (emergency use)
 3. **History Endpoint**: GET endpoint to view payment status history
+
+
+

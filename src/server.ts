@@ -16,6 +16,7 @@ import paymentsRoutes from "./routes/payments.routes";
 import analyticsRoutes from "./routes/analytics.routes";
 import adminRoutes from "./routes/admin.routes";
 import shippoRoutes from "./routes/shippo.routes";
+import { shippoWebhook } from "./controller/shippoController";
 
 import { logger } from "./utils/logger";
 import { prisma } from "./config/database";
@@ -176,6 +177,13 @@ app.get("/health", (req: Request, res: Response) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV,
   });
+});
+
+// Fallback webhook routes (before 404 handler)
+app.post('/webhook', (req, res) => {
+  console.log('🔄 Handling /webhook request - forwarding to Shippo webhook handler');
+  // Directly call the shippo webhook handler
+  shippoWebhook(req, res);
 });
 
 // 404 handler

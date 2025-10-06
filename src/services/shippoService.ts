@@ -83,14 +83,39 @@ export const validateAddress = async (address: ShippingAddress) => {
       phone: address.phone || '',
     });
 
+    // More lenient validation - accept address if it has basic required fields
+    const hasRequiredFields = !!(
+      validationResult.name &&
+      validationResult.street1 &&
+      validationResult.city &&
+      validationResult.state &&
+      validationResult.zip &&
+      validationResult.country
+    );
+
     return {
-      isValid: validationResult.isComplete,
+      isValid: hasRequiredFields || validationResult.isComplete,
       validatedAddress: validationResult,
       suggestions: [],
     };
   } catch (error) {
     console.error('Address validation error:', error);
-    throw new Error('Failed to validate address');
+    
+    // If Shippo validation fails, do basic validation instead
+    const hasRequiredFields = !!(
+      address.name &&
+      address.street1 &&
+      address.city &&
+      address.state &&
+      address.zip &&
+      address.country
+    );
+    
+    return {
+      isValid: hasRequiredFields,
+      validatedAddress: address,
+      suggestions: [],
+    };
   }
 };
 

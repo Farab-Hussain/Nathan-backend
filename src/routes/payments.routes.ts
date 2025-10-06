@@ -756,6 +756,11 @@ router.post("/webhook", async (req, res) => {
   }
 });
 
+// Redirect GET requests to webhook to test endpoint
+router.get("/webhook", (req, res) => {
+  res.redirect(301, "/payments/webhook-test");
+});
+
 // Webhook test endpoint for debugging
 router.get("/webhook-test", async (req, res) => {
   try {

@@ -43,3 +43,6 @@ All test cards use:
 3. **"Your card has insufficient funds"**
    - Cause: Using insufficient funds test card (4000 0000 0000 9995)
    - Solution: Use success test card (4242 4242 4242 4242)
+
+
+
