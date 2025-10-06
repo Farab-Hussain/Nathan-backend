@@ -212,7 +212,11 @@ router.post("/webhook", async (req, res) => {
             // Check all possible shipping address locations
             sessionShipping: (session as any).shipping,
             sessionShippingDetails: (session as any).shipping_details,
-            sessionShippingAddress: (session as any).shipping_address
+            sessionShippingAddress: (session as any).shipping_address,
+            // Check if shipping address collection was enabled
+            shippingAddressCollection: session.shipping_address_collection,
+            // Check billing address as fallback
+            billingAddress: session.customer_details?.address
           });
 
           // Get shipping address from Stripe checkout or fallback to metadata
@@ -245,6 +249,21 @@ router.post("/webhook", async (req, res) => {
               country: stripeShipping.address.country || '',
             };
             console.log("📦 Using Stripe-collected shipping address:", shippingAddress);
+          } else if (session.customer_details?.address) {
+            // Use billing address as shipping address fallback
+            const billingAddress = session.customer_details.address;
+            shippingAddress = {
+              name: session.customer_details.name || stripeName,
+              email: stripeEmail,
+              phone: session.customer_details.phone || '',
+              street1: billingAddress.line1 || '',
+              street2: billingAddress.line2 || '',
+              city: billingAddress.city || '',
+              state: billingAddress.state || '',
+              zip: billingAddress.postal_code || '',
+              country: billingAddress.country || '',
+            };
+            console.log("📦 Using billing address as shipping address fallback:", shippingAddress);
           } else if (compressedData.address) {
             // Fallback to address from frontend metadata
             shippingAddress = {
