@@ -208,24 +208,41 @@ router.post("/webhook", async (req, res) => {
             sessionKeys: Object.keys(session),
             customerDetails: session.customer_details,
             shipping: (session as any).shipping,
-            shipping_details: (session as any).shipping_details
+            shipping_details: (session as any).shipping_details,
+            // Check all possible shipping address locations
+            sessionShipping: (session as any).shipping,
+            sessionShippingDetails: (session as any).shipping_details,
+            sessionShippingAddress: (session as any).shipping_address
           });
 
           // Get shipping address from Stripe checkout or fallback to metadata
           let shippingAddress;
+          
+          // Try multiple possible locations for shipping address
+          let stripeShipping = null;
           if ((session as any).shipping_details) {
+            stripeShipping = (session as any).shipping_details;
+            console.log("📍 Found shipping address in shipping_details");
+          } else if ((session as any).shipping) {
+            stripeShipping = (session as any).shipping;
+            console.log("📍 Found shipping address in shipping");
+          } else if ((session as any).shipping_address) {
+            stripeShipping = (session as any).shipping_address;
+            console.log("📍 Found shipping address in shipping_address");
+          }
+          
+          if (stripeShipping && stripeShipping.address) {
             // Use address collected by Stripe checkout
-            const shipping = (session as any).shipping_details;
             shippingAddress = {
-              name: shipping.name || stripeName,
+              name: stripeShipping.name || stripeName,
               email: stripeEmail,
-              phone: shipping.phone || '',
-              street1: shipping.address.line1,
-              street2: shipping.address.line2 || '',
-              city: shipping.address.city,
-              state: shipping.address.state,
-              zip: shipping.address.postal_code,
-              country: shipping.address.country,
+              phone: stripeShipping.phone || '',
+              street1: stripeShipping.address.line1 || '',
+              street2: stripeShipping.address.line2 || '',
+              city: stripeShipping.address.city || '',
+              state: stripeShipping.address.state || '',
+              zip: stripeShipping.address.postal_code || '',
+              country: stripeShipping.address.country || '',
             };
             console.log("📦 Using Stripe-collected shipping address:", shippingAddress);
           } else if (compressedData.address) {
@@ -256,6 +273,12 @@ router.post("/webhook", async (req, res) => {
           // Validate that we have a complete address
           if (!shippingAddress.street1 || !shippingAddress.city || !shippingAddress.state || !shippingAddress.zip || !shippingAddress.country) {
             console.error("❌ Incomplete shipping address:", shippingAddress);
+            console.error("❌ Stripe session shipping data:", {
+              shipping: (session as any).shipping,
+              shipping_details: (session as any).shipping_details,
+              shipping_address: (session as any).shipping_address,
+              customer_details: session.customer_details
+            });
             return res.status(400).json({ error: "Complete shipping address required" });
           }
           
@@ -542,7 +565,7 @@ router.post("/create-checkout-session", async (req, res) => {
       metadata,
       // Pre-fill customer email with authenticated user's email
       customer_email: dbUser.email || undefined,
-      // Enable shipping address collection
+      // Enable shipping address collection (required)
       shipping_address_collection: {
         allowed_countries: ["US", "CA"],
       },
