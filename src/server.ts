@@ -16,7 +16,6 @@ import paymentsRoutes from "./routes/payments.routes";
 import analyticsRoutes from "./routes/analytics.routes";
 import adminRoutes from "./routes/admin.routes";
 import shippoRoutes from "./routes/shippo.routes";
-import { shippoWebhook } from "./controller/shippoController";
 
 import { logger } from "./utils/logger";
 import { prisma } from "./config/database";
@@ -44,7 +43,7 @@ const allowedOrigins = [
   "https://www.licorice4good.com",
   "https://api.licorice4good.com",
   "http://localhost:3000", // Next.js dev server
-  "http://localhost:5000", // Backend dev server
+  "http://localhost:5000", // Backenid dev server
 ];
 
 app.use(
@@ -61,12 +60,11 @@ app.use(
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log(`CORS blocked origin: ${origin}`);
-        callback(new Error(`Not allowed by CORS: ${origin}`));
+        callback(new Error("Not allowed by CORS"));
       }
     },
     credentials: true, // ✅ needed for cookies/sessions
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -75,13 +73,8 @@ app.use(
       "X-Requested-With",
       "Accept",
       "Cache-Control",
-      "Origin",
-      "Access-Control-Request-Method",
-      "Access-Control-Request-Headers",
     ],
     exposedHeaders: ["Set-Cookie"],
-    preflightContinue: false,
-    optionsSuccessStatus: 200, // Some legacy browsers choke on 204
   })
 );
 
@@ -153,15 +146,6 @@ app.use(
 // Request logging updated
 app.use(requestLogger);
 
-// Handle preflight OPTIONS requests globally
-app.options('/*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, Stripe-Signature, X-Requested-With, Accept, Cache-Control, Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.status(200).end();
-});
-
 app.get('/', (req , res) => {
   res.status(200).json({
     status: "OK",
@@ -192,13 +176,6 @@ app.get("/health", (req: Request, res: Response) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV,
   });
-});
-
-// Fallback webhook routes (before 404 handler)
-app.post('/webhook', (req, res) => {
-  console.log('🔄 Handling /webhook request - forwarding to Shippo webhook handler');
-  // Directly call the shippo webhook handler
-  shippoWebhook(req, res);
 });
 
 // 404 handler
