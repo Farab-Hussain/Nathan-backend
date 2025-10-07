@@ -24,6 +24,7 @@ const deleteImageFile = (imageUrl: string | null) => {
   }
 };
 
+
 // Helper: resolve a Flavor by provided name (case-insensitive) or alias
 const resolveFlavorByNameOrAlias = async (nameLike: string) => {
   return await validateFlavor(nameLike);
@@ -256,8 +257,16 @@ export const updateProduct = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Request body is required" });
     }
 
-    const { name, description, price, stock, category, imageUrl, isActive } =
-      req.body;
+    const { name, description, price, stock, category, isActive } = req.body;
+
+    // Handle uploaded image
+    let imageUrl: string | null = null;
+    if (req.file) {
+      imageUrl = `/uploads/products/${req.file.filename}`;
+    } else {
+      // Keep existing imageUrl if no new file uploaded
+      imageUrl = req.body.imageUrl;
+    }
 
     // Check if user is admin
     const user = (req as any).user;

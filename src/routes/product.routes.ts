@@ -34,7 +34,7 @@ router.post(
   handleUploadError,
   createProduct
 ); // Create a new product
-router.put("/admin/:id", adminOnly, updateProduct); // Update a product
+router.put("/admin/:id", adminOnly, uploadProductImage, handleUploadError, updateProduct); // Update a product
 router.delete("/admin/:id", adminOnly, deleteProduct); // Delete a product
 
 export default router;
