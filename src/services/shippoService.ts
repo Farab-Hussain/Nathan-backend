@@ -207,44 +207,16 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
       throw new Error('Invalid address data: Missing required fields');
     }
     
-    // Check for test/fake addresses and prevent shipment creation
-    if (address.street1 === 'test' || address.city === 'test' || address.name === 'test') {
-      console.warn('⚠️ Using test address data - this may cause Shippo transaction failures');
-      
-      // For test addresses, create a mock shipment response instead of failing
-      if (process.env.NODE_ENV === 'development' || process.env.SHIPPO_TEST_MODE === 'true' || process.env.ALLOW_TEST_ADDRESSES === 'true') {
-        console.log('🧪 Test mode: Creating mock shipment response for test address');
-        return {
-          trackingNumber: 'TEST123456789',
-          trackingUrl: 'https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=TEST123456789',
-          labelUrl: 'data:application/pdf;base64,test-label-pdf',
-          status: 'SUCCESS',
-          carrier: 'USPS',
-          service: 'USPS Ground',
-          cost: '5.09',
-          estimatedDays: 4
-        };
-      } else {
-        throw new Error('Test address data detected. Please use a real address for production orders.');
-      }
-    }
-
-    // Enable mock mode for development/testing to prevent real shipment failures
-    if (process.env.SHIPPO_MOCK_MODE === 'true' || process.env.NODE_ENV === 'development') {
-      console.log('🧪 Mock mode enabled: Creating mock shipment response');
-      return {
-        trackingNumber: 'MOCK' + Date.now(),
-        trackingUrl: 'https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=MOCK' + Date.now(),
-        labelUrl: 'data:application/pdf;base64,mock-label-pdf',
-        status: 'SUCCESS',
-        carrier: 'USPS',
-        service: 'USPS Ground',
-        cost: '5.09',
-        estimatedDays: 4
-      };
-    }
+    // Log the address being used for shipment creation
+    console.log('📍 Creating shipment for address:', {
+      name: address.name,
+      city: address.city,
+      state: address.state,
+      zip: address.zip,
+      country: address.country
+    });
     
-    // Create shipment
+    // Create shipment with proper configuration for USPS compatibility
     const shipment = await shippo.shipments.create({
       addressFrom: DEFAULT_SENDER_ADDRESS,
       addressTo: {
@@ -258,8 +230,17 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
         country: shipmentData.toAddress.country,
         email: shipmentData.toAddress.email,
         phone: shipmentData.toAddress.phone || '',
+        // Add residential flag for better address validation
+        isResidential: true,
       },
       parcels: shipmentData.parcels,
+      // Add shipment extras to bypass address validation for USPS compatibility
+      extra: {
+        bypassAddressValidation: true
+      },
+      metadata: `Order ${shipmentData.orderId}`,
+      // Set shipment date to current date
+      shipmentDate: new Date().toISOString(),
     });
 
     // Purchase the selected rate
@@ -282,6 +263,7 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
     const transaction = await shippo.transactions.create({
       rate: selectedRateId,
       labelFileType: 'PDF',
+      metadata: `Order ${shipmentData.orderId}`,
     });
 
     console.log('🔍 Transaction response:', {
@@ -451,34 +433,17 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
       response: error?.response?.data
     });
     
-    // If shipment fails, create a mock response for development/testing
-    if (process.env.NODE_ENV === 'development' || process.env.SHIPPO_MOCK_ON_ERROR === 'true') {
-      console.log('🔄 Creating fallback mock shipment due to error');
-      const mockTrackingNumber = 'FALLBACK' + Date.now();
-      
-      // Update order with mock shipment data
-      await prisma.order.update({
-        where: { id: shipmentData.orderId },
-        data: {
-          shipmentId: 'mock-' + Date.now(),
-          trackingNumber: mockTrackingNumber,
-          trackingUrl: `https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=${mockTrackingNumber}`,
-          shippingLabelUrl: 'data:application/pdf;base64,mock-fallback-label',
-          shippingStatus: 'label_created',
-          shippingCarrier: 'USPS',
-          shippingService: 'USPS Ground',
-          shippingCost: 5.09,
-        },
-      });
-      
-      return {
-        shipmentId: 'mock-' + Date.now(),
-        trackingNumber: mockTrackingNumber,
-        trackingUrl: `https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=${mockTrackingNumber}`,
-        labelUrl: 'data:application/pdf;base64,mock-fallback-label',
-        status: 'label_created',
-      };
-    }
+    // Log the error for debugging
+    console.error('❌ Shipment creation failed:', {
+      error: error?.message,
+      orderId: shipmentData.orderId,
+      address: {
+        name: shipmentData.toAddress.name,
+        city: shipmentData.toAddress.city,
+        state: shipmentData.toAddress.state,
+        zip: shipmentData.toAddress.zip
+      }
+    });
     
     throw new Error('Failed to create shipment');
   }
