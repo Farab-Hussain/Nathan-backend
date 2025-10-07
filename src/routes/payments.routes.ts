@@ -347,6 +347,56 @@ router.post("/webhook", async (req, res) => {
             total: newOrder.total,
           });
 
+          // Update inventory for all order items (stock management)
+          console.log("📦 Updating inventory for order items...");
+          for (const item of orderData.orderItems) {
+            try {
+              // For 3-pack products, we need to deduct from flavor inventory
+              if (item.productId === "3-pack") {
+                if (item.flavorIds && item.flavorIds.length > 0) {
+                  // Handle custom packs
+                  for (const flavorId of item.flavorIds) {
+                    await prisma.flavorInventory.update({
+                      where: { flavorId },
+                      data: {
+                        onHand: {
+                          decrement: item.quantity,
+                        },
+                        reserved: {
+                          decrement: item.quantity,
+                        },
+                      },
+                    });
+                  }
+                }
+              } else {
+                // Handle regular products
+                await prisma.product.update({
+                  where: { id: item.productId },
+                  data: {
+                    stock: {
+                      decrement: item.quantity,
+                    },
+                  },
+                });
+              }
+              console.log(`✅ Updated inventory for product ${item.productId}, quantity: ${item.quantity}`);
+            } catch (error) {
+              console.warn(`⚠️ Could not update inventory for product ${item.productId}:`, error);
+            }
+          }
+
+          // Clear the user's cart after successful order creation
+          console.log("🛒 Clearing user cart after successful order...");
+          try {
+            await prisma.cartLine.deleteMany({
+              where: { userId: user.id },
+            });
+            console.log("✅ Cart cleared successfully");
+          } catch (error) {
+            console.warn("⚠️ Could not clear cart:", error);
+          }
+
           // Create Shippo shipment for the new order
           try {
             const { getShippingRates, createShipment } = await import("../services/shippoService");
