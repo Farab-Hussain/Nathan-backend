@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
+import fs from "fs";
+import path from "path";
 import {
   validateFlavor,
   generateSKU,
@@ -7,6 +9,20 @@ import {
 } from "../utils/skuGenerator";
 
 const prisma = new PrismaClient();
+
+// Helper function to delete image file
+const deleteImageFile = (imageUrl: string | null) => {
+  if (!imageUrl) return;
+
+  try {
+    const imagePath = path.join(process.cwd(), imageUrl);
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+  } catch (error) {
+    console.error("Error deleting image file:", error);
+  }
+};
 
 // Helper: resolve a Flavor by provided name (case-insensitive) or alias
 const resolveFlavorByNameOrAlias = async (nameLike: string) => {
@@ -24,7 +40,7 @@ export const createProduct = async (req: Request, res: Response) => {
     const { name, description, price, stock, category } = req.body;
 
     // Handle uploaded image
-    let imageUrl = null;
+    let imageUrl: string | null = null;
     if (req.file) {
       imageUrl = `/uploads/products/${req.file.filename}`;
     }
@@ -317,9 +333,43 @@ export const deleteProduct = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Admin access required" });
     }
 
-    await prisma.product.delete({
+    // Check if product exists
+    const existingProduct = await prisma.product.findUnique({
       where: { id },
+      select: { id: true, name: true, imageUrl: true }
     });
+
+    if (!existingProduct) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // Delete product with cascading deletes for related records
+    await prisma.$transaction(async (tx) => {
+      // Delete ProductFlavor records first (though cascade should handle this)
+      await tx.productFlavor.deleteMany({
+        where: { productId: id }
+      });
+
+      // Delete CartItem records that reference this product
+      await tx.cartItem.deleteMany({
+        where: { productId: id }
+      });
+
+      // Delete OrderItem records that reference this product
+      await tx.orderItem.deleteMany({
+        where: { productId: id }
+      });
+
+      // Finally delete the product
+      await tx.product.delete({
+        where: { id }
+      });
+    });
+
+    // Delete the product image file if it exists
+    if (existingProduct.imageUrl) {
+      deleteImageFile(existingProduct.imageUrl);
+    }
 
     res.json({ message: "Product deleted successfully" });
   } catch (err) {
