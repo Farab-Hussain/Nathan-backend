@@ -312,101 +312,57 @@ router.post("/webhook", async (req, res) => {
               flavorIds: item.flavors,
               customPackName: item.custom,
             })),
-            shippingAddress: {
-              street: shippingAddress.street1,
-              city: shippingAddress.city,
-              state: shippingAddress.state,
-              zipCode: shippingAddress.zip,
-              country: shippingAddress.country,
-            }
+            shippingAddress: shippingAddress
           };
 
-          // Create order using the orderController to ensure stock reduction
-          const { createOrder } = await import("../controller/orderController");
-          
-          // Create a mock request object for the createOrder function
-          const mockReq = {
-            user: { id: user.id },
-            body: {
-              orderItems: orderData.orderItems,
+          // Create order with confirmed status and paid payment status
+          const newOrder = await prisma.order.create({
+            data: {
+              userId: user.id,
+              status: "confirmed",
+              paymentStatus: "paid",
               total: orderData.total,
               shippingAddress: orderData.shippingAddress,
               orderNotes: orderData.orderNotes,
-            }
-          } as any;
-          
-          const mockRes = {
-            status: (code: number) => ({
-              json: (data: any) => {
-                if (code >= 400) {
-                  throw new Error(`Order creation failed: ${JSON.stringify(data)}`);
-                }
-                return { statusCode: code, data };
-              }
-            }),
-            json: (data: any) => ({ statusCode: 200, data })
-          } as any;
-          
-          // Call createOrder function to ensure stock reduction
-          await createOrder(mockReq, mockRes);
-          
-          // Get the created order
-          const newOrder = await prisma.order.findFirst({
-            where: { userId: user.id },
-            orderBy: { createdAt: 'desc' },
-            include: { orderItems: true }
-          });
-          
-          if (!newOrder) {
-            throw new Error('Order creation failed - no order found');
-          }
-
-          // Update order status to confirmed and payment status to paid
-          const updatedOrder = await prisma.order.update({
-            where: { id: newOrder.id },
-            data: {
-              status: "confirmed",
-              paymentStatus: "paid",
+              orderItems: {
+                create: orderData.orderItems.map((item: any) => ({
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  price: item.price,
+                  total: item.total,
+                  flavorIds: item.flavorIds || [],
+                  customPackName: item.customPackName || null,
+                })),
+              },
             },
-            include: { orderItems: true }
+            include: {
+              orderItems: true,
+            },
           });
 
           console.log("✅ Order created from payment:", {
-            orderId: updatedOrder.id,
-            status: updatedOrder.status,
-            paymentStatus: updatedOrder.paymentStatus,
-            total: updatedOrder.total,
+            orderId: newOrder.id,
+            status: newOrder.status,
+            paymentStatus: newOrder.paymentStatus,
+            total: newOrder.total,
           });
 
           // Create Shippo shipment for the new order
           try {
             const { getShippingRates, createShipment } = await import("../services/shippoService");
             
-            // Convert address format for Shippo service
-            const shippoAddress = {
-              name: shippingAddress.name,
-              street1: shippingAddress.street1,
-              street2: shippingAddress.street2,
-              city: shippingAddress.city,
-              state: shippingAddress.state,
-              zip: shippingAddress.zip,
-              country: shippingAddress.country,
-              email: shippingAddress.email,
-              phone: shippingAddress.phone,
-            };
-            
             console.log("🔍 Getting shipping rates for address:", {
-              name: shippoAddress.name,
-              street1: shippoAddress.street1,
-              city: shippoAddress.city,
-              state: shippoAddress.state,
-              zip: shippoAddress.zip,
-              country: shippoAddress.country,
+              name: orderData.shippingAddress.name,
+              street1: orderData.shippingAddress.street1,
+              city: orderData.shippingAddress.city,
+              state: orderData.shippingAddress.state,
+              zip: orderData.shippingAddress.zip,
+              country: orderData.shippingAddress.country,
             });
             
             // First get shipping rates
             const rates = await getShippingRates(
-              shippoAddress,
+              orderData.shippingAddress as any,
               [{
                 length: '6',
                 width: '4',
@@ -420,8 +376,8 @@ router.post("/webhook", async (req, res) => {
             if (rates.length > 0) {
               // Use the first rate
               await createShipment({
-                orderId: updatedOrder.id,
-                toAddress: shippoAddress,
+                orderId: newOrder.id,
+                toAddress: orderData.shippingAddress as any,
                 parcels: [{
                   length: '6',
                   width: '4',
@@ -437,20 +393,7 @@ router.post("/webhook", async (req, res) => {
             }
           } catch (shipmentError) {
             console.error("⚠️ Failed to create Shippo shipment for new order:", shipmentError);
-            
-            // Update order with shipment failure status
-            await prisma.order.update({
-              where: { id: updatedOrder.id },
-              data: {
-                shippingStatus: 'shipment_failed',
-                // Keep the order as confirmed since payment was successful
-              }
-            });
-            
-            console.log("📝 Order updated with shipment failure status:", {
-              orderId: updatedOrder.id,
-              shippingStatus: 'shipment_failed'
-            });
+            // Don't fail the webhook for shipment errors
           }
         } catch (orderError) {
           console.error("❌ Failed to create order from payment metadata:", orderError);
