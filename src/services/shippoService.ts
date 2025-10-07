@@ -391,9 +391,12 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
     const labelUrl = transaction.labelUrl || `https://goshippo.com/label/${transaction.objectId || 'unknown'}`;
 
     // Extract carrier and service information
+    console.log('🔍 Transaction rate data:', JSON.stringify(transaction.rate, null, 2));
     const carrier = (typeof transaction.rate === 'object' ? transaction.rate?.provider : '') || 'Unknown';
     const service = (typeof transaction.rate === 'object' ? transaction.rate?.servicelevelName : '') || 'Standard';
     const cost = typeof transaction.rate === 'object' ? parseFloat(transaction.rate?.amount || '0') : 0;
+    
+    console.log('📋 Extracted carrier info:', { carrier, service, cost });
 
     console.log('📦 Shipment details:', {
       carrier,
