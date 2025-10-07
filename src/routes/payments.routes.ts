@@ -443,7 +443,21 @@ router.post("/webhook", async (req, res) => {
             }
           } catch (shipmentError) {
             console.error("⚠️ Failed to create Shippo shipment for new order:", shipmentError);
-            // Don't fail the webhook for shipment errors
+            
+            // Update order status to failed when shipment creation fails
+            try {
+              await prisma.order.update({
+                where: { id: newOrder.id },
+                data: {
+                  status: 'shipping_failed',
+                  shippingStatus: 'failed',
+                  shippingError: (shipmentError as Error)?.message || 'Shipment creation failed',
+                },
+              });
+              console.log("📋 Order status updated to shipping_failed due to shipment error");
+            } catch (updateError) {
+              console.error("❌ Failed to update order status after shipment failure:", updateError);
+            }
           }
         } catch (orderError) {
           console.error("❌ Failed to create order from payment metadata:", orderError);

@@ -85,6 +85,7 @@ model Order {
   shippingCarrier   String?
   shippingService   String?
   shippingCost      Float?
+  shippingError     String?
   
   user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   orderItems      OrderItem[]
