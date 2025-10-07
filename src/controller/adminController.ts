@@ -63,7 +63,7 @@ export const createFlavor = async (req: Request, res: Response) => {
     const imageFile = req.file;
 
     // Handle aliases - could be string (JSON) or array
-    let aliasesArray = [];
+    let aliasesArray: string[] = [];
     if (typeof aliases === "string") {
       try {
         aliasesArray = JSON.parse(aliases);
@@ -148,7 +148,7 @@ export const updateFlavor = async (req: Request, res: Response) => {
     }
 
     // Handle aliases - could be string (JSON) or array
-    let aliasesArray = [];
+    let aliasesArray: string[] = [];
     if (aliases !== undefined) {
       if (typeof aliases === "string") {
         try {
@@ -486,3 +486,4 @@ export const getSystemConfig = async (req: Request, res: Response) => {
     res.status(500).json({ message: "Error fetching system configuration" });
   }
 };
+
