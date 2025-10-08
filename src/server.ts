@@ -22,7 +22,6 @@ import { prisma } from "./config/database";
 import { errorHandler, notFound } from "./middlewares/error.middleware";
 import {
   helmetConfig,
-  generalRateLimit,
   // authRateLimit, // COMMENTED OUT FOR NOW
   securityHeaders,
   requestLogger,
@@ -79,7 +78,7 @@ app.use(
 );
 
 // Rate limiting
-app.use(generalRateLimit);
+// app.use(generalRateLimit);
 
 // Body parsing middleware
 // Use raw body only for webhook routes; json for others
