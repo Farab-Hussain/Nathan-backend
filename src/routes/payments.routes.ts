@@ -86,8 +86,9 @@ router.post("/create-checkout-session", async (req, res) => {
         `${process.env.CLIENT_URL}/orders/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: cancelUrl || `${process.env.CLIENT_URL}/cart`,
       metadata,
+      billing_address_collection: "required",
       shipping_address_collection: {
-        allowed_countries: ["US", "CA"],
+        allowed_countries: ["US", "CA", "GB", "AU"],
       },
       shipping_options: [
         {
@@ -98,6 +99,9 @@ router.post("/create-checkout-session", async (req, res) => {
           },
         },
       ],
+      phone_number_collection: {
+        enabled: true,
+      },
     });
 
     return res.json({ url: session.url });
@@ -168,8 +172,9 @@ router.post("/retry-payment", async (req, res) => {
         orderId: String(orderId),
         isRetry: "true",
       },
+      billing_address_collection: "required",
       shipping_address_collection: {
-        allowed_countries: ["US", "CA"],
+        allowed_countries: ["US", "CA", "GB", "AU"],
       },
       shipping_options: [
         {
@@ -180,6 +185,9 @@ router.post("/retry-payment", async (req, res) => {
           },
         },
       ],
+      phone_number_collection: {
+        enabled: true,
+      },
     });
 
     // Update order status to pending while payment is being retried
@@ -378,18 +386,27 @@ router.post("/webhook", async (req, res) => {
     
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
-      const orderId = session.metadata?.orderId;
-      const isRetry = session.metadata?.isRetry === "true";
+      
+      // Retrieve the full session to get shipping details
+      // The webhook event payload doesn't include shipping_details by default
+      const fullSession = await stripe.checkout.sessions.retrieve(session.id, {
+        expand: ['line_items', 'payment_intent']
+      });
+      
+      const orderId = fullSession.metadata?.orderId;
+      const isRetry = fullSession.metadata?.isRetry === "true";
 
       console.log("💳 Processing checkout.session.completed:", {
-        sessionId: session.id,
+        sessionId: fullSession.id,
         orderId,
         isRetry,
-        paymentStatus: session.payment_status,
-        amountTotal: session.amount_total,
-        currency: session.currency,
-        customerEmail: session.customer_details?.email,
-        paymentIntentId: session.payment_intent,
+        paymentStatus: fullSession.payment_status,
+        amountTotal: fullSession.amount_total,
+        currency: fullSession.currency,
+        customerEmail: fullSession.customer_details?.email,
+        paymentIntentId: fullSession.payment_intent,
+        hasShippingDetails: !!(fullSession as any).shipping_details,
+        hasShippingCost: !!(fullSession as any).shipping_cost,
       });
 
       if (orderId) {
@@ -413,8 +430,8 @@ router.post("/webhook", async (req, res) => {
         });
 
         // Handle existing order updates (for retry payments)
-        const shippingDetails: any = (session as any).shipping_details || null;
-        const customerDetails: any = (session as any).customer_details || null;
+        const shippingDetails: any = (fullSession as any).shipping_details || null;
+        const customerDetails: any = (fullSession as any).customer_details || null;
 
         const updateData: any = {
           paymentStatus: "paid",
@@ -423,12 +440,12 @@ router.post("/webhook", async (req, res) => {
         };
 
         // Only update total if it's different
-        if (session.amount_total && session.amount_total !== Math.round(existingOrder.total * 100)) {
-          updateData.total = session.amount_total / 100;
+        if (fullSession.amount_total && fullSession.amount_total !== Math.round(existingOrder.total * 100)) {
+          updateData.total = fullSession.amount_total / 100;
           console.log("💰 Updating order total:", {
             oldTotal: existingOrder.total,
-            newTotal: session.amount_total / 100,
-            stripeAmount: session.amount_total,
+            newTotal: fullSession.amount_total / 100,
+            stripeAmount: fullSession.amount_total,
           });
         }
 
@@ -502,13 +519,13 @@ router.post("/webhook", async (req, res) => {
             // Don't fail the webhook for shipment errors
           }
         }
-      } else if (session.metadata?.orderData) {
+      } else if (fullSession.metadata?.orderData) {
         // Create new order from metadata (ONLY after successful payment)
         console.log("🆕 Creating order from payment metadata - PAYMENT SUCCESSFUL");
         
         try {
-          const compressedData = JSON.parse(session.metadata.orderData);
-          const customerEmail = session.customer_details?.email;
+          const compressedData = JSON.parse(fullSession.metadata.orderData);
+          const customerEmail = fullSession.customer_details?.email;
           
           if (!customerEmail) {
             console.error("❌ No customer email in session");
@@ -541,10 +558,10 @@ router.post("/webhook", async (req, res) => {
               country: compressedData.address.country,
             };
           } else {
-            // Address was collected by Stripe - extract from session
-            const sessionAny = session as any; // Cast to access shipping_details
+            // Address was collected by Stripe - extract from fullSession
+            const sessionAny = fullSession as any; // Cast to access shipping_details
             const stripeShipping = sessionAny.shipping_details || sessionAny.shipping;
-            const stripeCustomer = session.customer_details;
+            const stripeCustomer = fullSession.customer_details;
             
             if (!stripeShipping || !stripeShipping.address) {
               console.error("❌ No shipping address found in session:", {
