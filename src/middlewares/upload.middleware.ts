@@ -17,7 +17,7 @@ const fileFilter = (
     cb(new Error("Only image files are allowed!"));
   }
 };
-
+// 
 // Configure multer for Cloudinary uploads
 const upload = multer({
   storage: storage,
