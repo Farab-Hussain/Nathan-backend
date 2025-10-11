@@ -48,7 +48,8 @@ export const register = async (req: Request, res: Response) => {
     // Determine cookie domain based on environment and request origin
     let cookieDomain = undefined;
     if (process.env.NODE_ENV === "production") {
-      cookieDomain = "licorice4good.com";
+      // Use leading dot to make cookie work across all subdomains
+      cookieDomain = ".licorice4good.com";
     } else if (req.headers.origin?.includes('localhost')) {
       // For local development, don't set domain to allow localhost access
       cookieDomain = undefined;
@@ -117,7 +118,8 @@ export const login = async (req: Request, res: Response) => {
     // Determine cookie domain based on environment and request origin
     let cookieDomain = undefined;
     if (process.env.NODE_ENV === "production") {
-      cookieDomain = "licorice4good.com";
+      // Use leading dot to make cookie work across all subdomains
+      cookieDomain = ".licorice4good.com";
     } else if (req.headers.origin?.includes('localhost')) {
       // For local development, don't set domain to allow localhost access
       cookieDomain = undefined;
@@ -214,7 +216,8 @@ export const logout = (req: Request, res: Response) => {
   // Determine cookie domain based on environment and request origin
   let cookieDomain = undefined;
   if (process.env.NODE_ENV === "production") {
-    cookieDomain = "licorice4good.com";
+    // Use leading dot to make cookie work across all subdomains
+    cookieDomain = ".licorice4good.com";
   } else if (req.headers.origin?.includes('localhost')) {
     // For local development, don't set domain to allow localhost access
     cookieDomain = undefined;
