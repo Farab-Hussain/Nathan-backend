@@ -383,3 +383,189 @@ export const sendVerificationEmail = async (
     }
   }
 };
+
+// Order confirmation email
+export const sendOrderConfirmationEmail = async (
+  to: string,
+  orderDetails: {
+    orderId: string;
+    customerName: string;
+    total: number;
+    items: Array<{
+      name: string;
+      quantity: number;
+      price: number;
+    }>;
+    shippingAddress: {
+      street1: string;
+      city: string;
+      state: string;
+      zip: string;
+      country: string;
+    };
+  }
+) => {
+  const itemsHtml = orderDetails.items
+    .map(
+      (item) => `
+      <tr>
+        <td style="padding: 10px; border-bottom: 1px solid #e9ecef;">${item.name}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e9ecef; text-align: center;">${item.quantity}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e9ecef; text-align: right;">$${item.price.toFixed(2)}</td>
+        <td style="padding: 10px; border-bottom: 1px solid #e9ecef; text-align: right;">$${(item.quantity * item.price).toFixed(2)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  const emailHtml = `
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+      <div style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+        <h1 style="color: white; margin: 0; font-size: 28px;">🎉 Order Confirmed!</h1>
+        <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Thank you for your order, ${orderDetails.customerName}!</p>
+      </div>
+      
+      <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+        <div style="background: #e7f5ff; border-left: 4px solid #339af0; padding: 15px; margin-bottom: 20px;">
+          <p style="margin: 0; font-size: 14px; color: #1864ab;">
+            <strong>Order Number:</strong> #${orderDetails.orderId}
+          </p>
+        </div>
+        
+        <h2 style="color: #333; font-size: 20px; margin-bottom: 15px;">Order Summary</h2>
+        
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; background: white;">
+          <thead>
+            <tr style="background: #e9ecef;">
+              <th style="padding: 10px; text-align: left;">Item</th>
+              <th style="padding: 10px; text-align: center;">Qty</th>
+              <th style="padding: 10px; text-align: right;">Price</th>
+              <th style="padding: 10px; text-align: right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+            <tr style="background: #f8f9fa; font-weight: bold;">
+              <td colspan="3" style="padding: 15px; text-align: right;">Total:</td>
+              <td style="padding: 15px; text-align: right; color: #28a745; font-size: 18px;">$${orderDetails.total.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <h2 style="color: #333; font-size: 20px; margin-bottom: 15px; margin-top: 30px;">📦 Shipping Address</h2>
+        <div style="background: white; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6;">
+          <p style="margin: 5px 0; color: #495057;">${orderDetails.shippingAddress.street1}</p>
+          <p style="margin: 5px 0; color: #495057;">${orderDetails.shippingAddress.city}, ${orderDetails.shippingAddress.state} ${orderDetails.shippingAddress.zip}</p>
+          <p style="margin: 5px 0; color: #495057;">${orderDetails.shippingAddress.country}</p>
+        </div>
+        
+        <div style="background: #d1f3d1; border: 1px solid #28a745; border-radius: 5px; padding: 15px; margin: 30px 0;">
+          <p style="margin: 0; font-size: 14px; color: #155724;">
+            <strong>✓ What's Next?</strong>
+          </p>
+          <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; color: #155724;">
+            <li>We're processing your order now</li>
+            <li>You'll receive a shipping notification when your order ships</li>
+            <li>Track your order at <a href="${process.env.CLIENT_URL || 'https://licorice4good.com'}/orders" style="color: #28a745;">your orders page</a></li>
+          </ul>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.CLIENT_URL || 'https://licorice4good.com'}/orders" 
+             style="background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
+            View Order Status
+          </a>
+        </div>
+        
+        <p style="font-size: 14px; color: #6c757d; margin-top: 30px; text-align: center;">
+          Questions? Contact us at <a href="mailto:support@licorice4good.com" style="color: #007bff;">support@licorice4good.com</a>
+        </p>
+        
+        <p style="font-size: 12px; color: #adb5bd; margin-top: 20px; text-align: center;">
+          This is an automated email. Please do not reply to this email.
+        </p>
+      </div>
+    </div>
+  `;
+
+  // Check if email credentials are configured
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn("⚠️  Gmail credentials not configured. Using Ethereal email for development.");
+    
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      const transporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      });
+
+      const mailOptions = {
+        from: `"Licrorice" <${testAccount.user}>`,
+        to,
+        subject: `Order Confirmation - #${orderDetails.orderId}`,
+        html: emailHtml,
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`📧 Order confirmation email sent (Ethereal): ${nodemailer.getTestMessageUrl(info)}`);
+      return;
+    } catch (error) {
+      console.error("❌ Error sending order confirmation email (Ethereal):", error);
+      return;
+    }
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    const mailOptions = {
+      from: "Licrorice <no-reply@licorice4good.com>",
+      to,
+      subject: `Order Confirmation - #${orderDetails.orderId}`,
+      html: emailHtml,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Order confirmation email sent to ${to}`);
+  } catch (error) {
+    console.error("❌ Error sending order confirmation email via Gmail:", error);
+    // Fallback to Ethereal
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      const transporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      });
+
+      const mailOptions = {
+        from: `"Licrorice" <${testAccount.user}>`,
+        to,
+        subject: `Order Confirmation - #${orderDetails.orderId}`,
+        html: emailHtml,
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`📧 Order confirmation email sent (Ethereal fallback): ${nodemailer.getTestMessageUrl(info)}`);
+      return;
+    } catch (fallbackErr) {
+      console.error("❌ Ethereal fallback failed:", fallbackErr);
+      return;
+    }
+  }
+};

@@ -1,6 +1,7 @@
 import express from "express";
 import Stripe from "stripe";
 import { PrismaClient } from "../generated/prisma";
+import { sendOrderConfirmationEmail } from "../utils/mailer";
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -474,6 +475,43 @@ router.post("/webhook", async (req, res) => {
           processingTime: Date.now() - webhookStartTime + "ms",
         });
 
+        // Send order confirmation email for retry payment
+        try {
+          const customerEmail = fullSession.customer_details?.email;
+          if (customerEmail) {
+            // Fetch order items for email
+            const orderWithItems = await prisma.order.findUnique({
+              where: { id: orderId },
+              include: { orderItems: true },
+            });
+
+            if (orderWithItems) {
+              const shippingAddr = updatedOrder.shippingAddress as any;
+              await sendOrderConfirmationEmail(customerEmail, {
+                orderId: updatedOrder.id,
+                customerName: shippingAddr?.name || 'Customer',
+                total: updatedOrder.total,
+                items: orderWithItems.orderItems.map((item: any) => ({
+                  name: item.customPackName || `Product #${item.productId}`,
+                  quantity: item.quantity,
+                  price: item.price,
+                })),
+                shippingAddress: {
+                  street1: shippingAddr?.street1 || '',
+                  city: shippingAddr?.city || '',
+                  state: shippingAddr?.state || '',
+                  zip: shippingAddr?.zip || '',
+                  country: shippingAddr?.country || '',
+                },
+              });
+              console.log("📧 Order confirmation email sent for retry payment");
+            }
+          }
+        } catch (emailError) {
+          console.error("❌ Error sending order confirmation email:", emailError);
+          // Don't fail the order update if email fails
+        }
+
         // Create Shippo shipment for the updated order if it doesn't exist
         if (!updatedOrder.shipmentId) {
           try {
@@ -637,6 +675,31 @@ router.post("/webhook", async (req, res) => {
             paymentStatus: newOrder.paymentStatus,
             total: newOrder.total,
           });
+
+          // Send order confirmation email
+          try {
+            await sendOrderConfirmationEmail(customerEmail, {
+              orderId: newOrder.id,
+              customerName: orderData.shippingAddress.name || 'Customer',
+              total: newOrder.total,
+              items: newOrder.orderItems.map((item: any) => ({
+                name: item.customPackName || `Product #${item.productId}`,
+                quantity: item.quantity,
+                price: item.price,
+              })),
+              shippingAddress: {
+                street1: orderData.shippingAddress.street1,
+                city: orderData.shippingAddress.city,
+                state: orderData.shippingAddress.state,
+                zip: orderData.shippingAddress.zip,
+                country: orderData.shippingAddress.country,
+              },
+            });
+            console.log("📧 Order confirmation email sent successfully");
+          } catch (emailError) {
+            console.error("❌ Error sending order confirmation email:", emailError);
+            // Don't fail the order creation if email fails
+          }
 
           // Create Shippo shipment for the new order
           try {
