@@ -43,7 +43,7 @@ router.post("/create-checkout-session", async (req, res) => {
     } else if (orderData) {
       // New order - store compressed data in metadata
       // We'll create the order ONLY after successful payment in webhook
-      const compressedData = {
+      const compressedData: any = {
         total: orderData.total,
         notes: orderData.orderNotes,
         items: orderData.orderItems.map((item: any) => ({
@@ -54,7 +54,11 @@ router.post("/create-checkout-session", async (req, res) => {
           flavors: item.flavorIds || [],
           custom: item.customPackName || null,
         })),
-        address: {
+      };
+      
+      // Only include shipping address if provided (not for guest checkout where Stripe collects it)
+      if (orderData.shippingAddress && orderData.shippingAddress.name) {
+        compressedData.address = {
           name: orderData.shippingAddress.name,
           email: orderData.shippingAddress.email,
           phone: orderData.shippingAddress.phone,
@@ -63,8 +67,8 @@ router.post("/create-checkout-session", async (req, res) => {
           state: orderData.shippingAddress.state,
           zip: orderData.shippingAddress.zipCode,
           country: orderData.shippingAddress.country,
-        }
-      };
+        };
+      }
       
       const dataString = JSON.stringify(compressedData);
       if (dataString.length > 500) {

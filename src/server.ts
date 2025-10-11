@@ -159,8 +159,9 @@ app.use("/auth", authRoutes);
 // app.use("/cart", cartRoutes); // COMMENTED OUT - ONLY USING 3-PACK CART
 app.use("/products", productRoutes);
 app.use("/orders", orderRoutes);
+// Mount more specific routes FIRST to avoid middleware conflicts
+app.use("/3pack/cart", threePackCartRoutes); // Must be BEFORE /3pack
 app.use("/3pack", threePackRoutes);
-app.use("/3pack/cart", threePackCartRoutes);
 app.use("/inventory", inventoryRoutes);
 app.use("/payments", paymentsRoutes);
 app.use("/analytics", analyticsRoutes);
