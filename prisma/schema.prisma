@@ -67,7 +67,9 @@ model ProductFlavor {
 
 model Order {
   id              String      @id @default(cuid())
-  userId          String
+  userId          String?
+  guestId         String?
+  guestEmail      String?
   status          String      @default("pending")
   total           Float
   shippingAddress Json?
@@ -87,10 +89,12 @@ model Order {
   shippingCost      Float?
   shippingError     String?
   
-  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
   orderItems      OrderItem[]
 
   @@index([userId])
+  @@index([guestId])
+  @@index([guestEmail])
   @@index([status])
   @@index([paymentStatus])
   @@index([trackingNumber])
@@ -176,7 +180,8 @@ model FlavorInventory {
 
 model CartLine {
   id         String      @id @default(cuid())
-  userId     String
+  userId     String?
+  guestId    String?
   productId  String
   recipeId   String?
   quantity   Int
@@ -186,9 +191,10 @@ model CartLine {
   updatedAt  DateTime    @updatedAt
   flavorIds  String[]
   packRecipe PackRecipe? @relation(fields: [recipeId], references: [id], onDelete: Restrict)
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([guestId])
   @@index([productId])
   @@index([recipeId])
   @@index([flavorIds])

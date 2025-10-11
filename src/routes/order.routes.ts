@@ -8,23 +8,22 @@ import {
   bulkUpdateOrders,
   bulkDeleteOrders,
 } from "../controller/orderController";
-import { protect } from "../middlewares/auth.middleware";
+import { protect, optionalAuth } from "../middlewares/auth.middleware";
 import { adminOnly } from "../middlewares/admin.middleware";
 
 const router = express.Router();
 
-// All order routes require authentication
-router.use(protect);
+// Create order supports guest checkout
+router.post("/", optionalAuth, createOrder);
 
-// User routes
-router.post("/", createOrder);
-router.get("/", getUserOrders);
-router.get("/:id", getOrderById);
+// Other user routes require authentication
+router.get("/", protect, getUserOrders);
+router.get("/:id", protect, getOrderById);
 
 // Admin routes (admin role required)
-router.put("/:id/status", adminOnly, updateOrderStatus);
-router.get("/admin/all", adminOnly, getAllOrders);
-router.put("/admin/bulk-update", adminOnly, bulkUpdateOrders);
-router.delete("/admin/bulk-delete", adminOnly, bulkDeleteOrders);
+router.put("/:id/status", protect, adminOnly, updateOrderStatus);
+router.get("/admin/all", protect, adminOnly, getAllOrders);
+router.put("/admin/bulk-update", protect, adminOnly, bulkUpdateOrders);
+router.delete("/admin/bulk-delete", protect, adminOnly, bulkDeleteOrders);
 
 export default router;

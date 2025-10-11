@@ -7,15 +7,20 @@ const prisma = new PrismaClient();
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const guestId = (req as any).guestId;
+    const isGuest = (req as any).isGuest;
 
-    // Verify user exists in database
-    const dbUser = await prisma.user.findUnique({
-      where: { id: user.id },
-      select: { id: true, email: true, isVerified: true },
-    });
+    // For authenticated users, verify they exist in database
+    let dbUser = null;
+    if (!isGuest && user) {
+      dbUser = await prisma.user.findUnique({
+        where: { id: user.id },
+        select: { id: true, email: true, isVerified: true },
+      });
 
-    if (!dbUser) {
-      return res.status(404).json({ message: "User not found" });
+      if (!dbUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
     }
 
     const {
@@ -23,7 +28,11 @@ export const createOrder = async (req: Request, res: Response) => {
       orderNotes,
       orderItems,
       total: requestTotal,
+      guestEmail,
     } = req.body;
+
+    // Define user identifier once for the entire function
+    const userIdentifier = isGuest ? { guestId } : { userId: dbUser?.id };
 
     // Shipping address validation - allow empty since Stripe will collect it
     // If shippingAddress is provided, validate it, otherwise allow empty (Stripe will collect)
@@ -150,7 +159,7 @@ export const createOrder = async (req: Request, res: Response) => {
       // 3-PACK CART APPROACH - Convert CartLine items to OrderItems
 
       cartLines = await prisma.cartLine.findMany({
-        where: { userId: user.id },
+        where: userIdentifier,
         include: {
           packRecipe: {
             include: {
@@ -238,7 +247,7 @@ export const createOrder = async (req: Request, res: Response) => {
 
       // Clear the cart after successful order creation
       await prisma.cartLine.deleteMany({
-        where: { userId: user.id },
+        where: userIdentifier,
       });
     }
 
@@ -248,7 +257,9 @@ export const createOrder = async (req: Request, res: Response) => {
     // Create order and order items
     const order = await prisma.order.create({
       data: {
-        userId: user.id,
+        userId: dbUser?.id ?? undefined,
+        guestId: isGuest ? guestId : undefined,
+        guestEmail: isGuest ? (guestEmail || shippingAddress?.email) : undefined,
         total: finalTotal,
         shippingAddress,
         orderNotes,
@@ -564,13 +575,15 @@ export const getAllOrders = async (req: Request, res: Response) => {
     if (status) where.status = status;
     if (paymentStatus) where.paymentStatus = paymentStatus;
 
-    // Search functionality
+    // Search functionality - includes guest orders
     if (search && typeof search === "string") {
       const searchTerm = search.trim();
       where.OR = [
         { id: { contains: searchTerm, mode: "insensitive" } },
         { user: { email: { contains: searchTerm, mode: "insensitive" } } },
         { user: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { guestEmail: { contains: searchTerm, mode: "insensitive" } },
+        { guestId: { contains: searchTerm, mode: "insensitive" } },
       ];
     }
 

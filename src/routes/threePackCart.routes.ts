@@ -6,12 +6,12 @@ import {
   removeCartLine,
   clearCart,
 } from "../controller/threePackCartController";
-import { protect } from "../middlewares/auth.middleware";
+import { optionalAuth } from "../middlewares/auth.middleware";
 
 const router = express.Router();
 
-// All cart routes require authentication
-router.use(protect);
+// Cart routes support both authenticated and guest users
+router.use(optionalAuth);
 
 // 3-Pack Cart operations
 router.post("/add", addToCart); // Add 3-pack to cart

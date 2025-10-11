@@ -15,7 +15,13 @@ const prisma = new PrismaClient();
 export const addToCart = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const guestId = (req as any).guestId;
+    const isGuest = (req as any).isGuest;
     const { product_id, recipe_id, flavor_ids, qty } = req.body;
+    
+    // Get user or guest identifier
+    const userId = user?.id || null;
+    const userIdentifier = isGuest ? { guestId } : { userId };
 
     // Validate required fields - only product_id and qty are always required
     if (!product_id || !qty) {
@@ -109,7 +115,7 @@ export const addToCart = async (req: Request, res: Response) => {
       //Check if user already has this custom pack in cart
       const existingCartLine = await prisma.cartLine.findFirst({
         where: {
-          userId: user.id,
+          ...userIdentifier,
           productId: product_id,
           flavorIds: { equals: flavor_ids },
         },
@@ -129,7 +135,7 @@ export const addToCart = async (req: Request, res: Response) => {
         //Create new cart line
         cartLine = await prisma.cartLine.create({
           data: {
-            userId: user.id,
+            ...userIdentifier,
             productId: product_id,
             flavorIds: flavor_ids,
             quantity: requestedQty,
@@ -242,7 +248,7 @@ export const addToCart = async (req: Request, res: Response) => {
     // Check if user already has this recipe in cart
     const existingCartLine = await prisma.cartLine.findFirst({
       where: {
-        userId: user.id,
+        ...userIdentifier,
         productId: product_id,
         recipeId: recipe_id,
       },
@@ -273,7 +279,7 @@ export const addToCart = async (req: Request, res: Response) => {
       // Create new cart line
       cartLine = await prisma.cartLine.create({
         data: {
-          userId: user.id,
+          ...userIdentifier,
           productId: product_id,
           recipeId: recipe_id,
           quantity: requestedQty,
@@ -335,9 +341,14 @@ export const addToCart = async (req: Request, res: Response) => {
 export const getUserCart = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const guestId = (req as any).guestId;
+    const isGuest = (req as any).isGuest;
+    
+    // Get user or guest identifier
+    const userIdentifier = isGuest ? { guestId } : { userId: user?.id };
 
     const cartLines = await prisma.cartLine.findMany({
-      where: { userId: user.id },
+      where: userIdentifier,
       include: {
         packRecipe: {
           include: {
@@ -462,6 +473,8 @@ export const getUserCart = async (req: Request, res: Response) => {
 export const updateCartLine = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const guestId = (req as any).guestId;
+    const isGuest = (req as any).isGuest;
     const cartLineId = req.params.id;
     const { qty } = req.body;
 
@@ -471,11 +484,14 @@ export const updateCartLine = async (req: Request, res: Response) => {
       });
     }
 
+    // Get user or guest identifier
+    const userIdentifier = isGuest ? { guestId } : { userId: user?.id };
+
     // Find the cart line
     const cartLine = await prisma.cartLine.findFirst({
       where: {
         id: cartLineId,
-        userId: user.id,
+        ...userIdentifier,
       },
       include: {
         packRecipe: {
@@ -682,13 +698,18 @@ export const updateCartLine = async (req: Request, res: Response) => {
 export const removeCartLine = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const guestId = (req as any).guestId;
+    const isGuest = (req as any).isGuest;
     const cartLineId = req.params.id;
+
+    // Get user or guest identifier
+    const userIdentifier = isGuest ? { guestId } : { userId: user?.id };
 
     // Find the cart line
     const cartLine = await prisma.cartLine.findFirst({
       where: {
         id: cartLineId,
-        userId: user.id,
+        ...userIdentifier,
       },
       include: {
         packRecipe: {
@@ -786,10 +807,15 @@ export const removeCartLine = async (req: Request, res: Response) => {
 export const clearCart = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
+    const guestId = (req as any).guestId;
+    const isGuest = (req as any).isGuest;
+
+    // Get user or guest identifier
+    const userIdentifier = isGuest ? { guestId } : { userId: user?.id };
 
     // Get all cart lines for the user
     const cartLines = await prisma.cartLine.findMany({
-      where: { userId: user.id },
+      where: userIdentifier,
       include: {
         packRecipe: {
           include: {
@@ -853,7 +879,7 @@ export const clearCart = async (req: Request, res: Response) => {
 
     // Delete all cart lines
     await prisma.cartLine.deleteMany({
-      where: { userId: user.id },
+      where: userIdentifier,
     });
 
     res.json({ message: "Cart cleared successfully" });
