@@ -525,6 +525,55 @@ router.post("/webhook", async (req, res) => {
             return res.status(404).json({ error: "User not found" });
           }
 
+          // Get shipping address - either from metadata or Stripe-collected details
+          let shippingAddressData;
+          
+          if (compressedData.address && compressedData.address.name) {
+            // Address was provided in metadata
+            shippingAddressData = {
+              name: compressedData.address.name,
+              email: compressedData.address.email,
+              phone: compressedData.address.phone,
+              street1: compressedData.address.street,
+              city: compressedData.address.city,
+              state: compressedData.address.state,
+              zip: compressedData.address.zip,
+              country: compressedData.address.country,
+            };
+          } else {
+            // Address was collected by Stripe - extract from session
+            const sessionAny = session as any; // Cast to access shipping_details
+            const stripeShipping = sessionAny.shipping_details || sessionAny.shipping;
+            const stripeCustomer = session.customer_details;
+            
+            if (!stripeShipping || !stripeShipping.address) {
+              console.error("❌ No shipping address found in session:", {
+                hasShippingDetails: !!sessionAny.shipping_details,
+                hasShipping: !!sessionAny.shipping,
+                hasCustomerDetails: !!session.customer_details,
+              });
+              throw new Error("Shipping address not found in Stripe session");
+            }
+            
+            // Combine address lines if line2 exists
+            const street = stripeShipping.address.line2 
+              ? `${stripeShipping.address.line1}, ${stripeShipping.address.line2}`
+              : stripeShipping.address.line1 || "";
+            
+            shippingAddressData = {
+              name: stripeShipping.name || stripeCustomer?.name || "",
+              email: stripeCustomer?.email || customerEmail,
+              phone: stripeCustomer?.phone || stripeShipping.phone || "",
+              street1: street,
+              city: stripeShipping.address.city || "",
+              state: stripeShipping.address.state || "",
+              zip: stripeShipping.address.postal_code || "",
+              country: stripeShipping.address.country || "",
+            };
+            
+            console.log("📍 Extracted shipping address from Stripe:", shippingAddressData);
+          }
+
           // Reconstruct full order data
           const orderData = {
             total: compressedData.total,
@@ -537,16 +586,7 @@ router.post("/webhook", async (req, res) => {
               flavorIds: item.flavors,
               customPackName: item.custom,
             })),
-            shippingAddress: {
-              name: compressedData.address.name,
-              email: compressedData.address.email,
-              phone: compressedData.address.phone,
-              street1: compressedData.address.street,
-              city: compressedData.address.city,
-              state: compressedData.address.state,
-              zip: compressedData.address.zip,
-              country: compressedData.address.country,
-            }
+            shippingAddress: shippingAddressData
           };
 
           // Create order with confirmed status and paid payment status

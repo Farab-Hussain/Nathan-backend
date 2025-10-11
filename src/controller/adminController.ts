@@ -8,17 +8,27 @@ import {
   generateFlavorCode,
   generateCategoryCode,
 } from "../utils/skuGenerator";
+import { uploadToCloudinary, deleteFromCloudinary } from "../config/cloudinary";
 
 const prisma = new PrismaClient();
 
-// Helper function to delete image file
-const deleteImageFile = (imageUrl: string | null) => {
-  if (!imageUrl) return;
+// Helper function to delete image file (updated for Cloudinary)
+const deleteImageFile = async (imageUrl: string | null, publicId?: string | null) => {
+  if (!imageUrl && !publicId) return;
 
   try {
-    const imagePath = path.join(process.cwd(), imageUrl);
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
+    // If we have a publicId, delete from Cloudinary
+    if (publicId) {
+      await deleteFromCloudinary(publicId);
+      return;
+    }
+
+    // Fallback to local file deletion for old images
+    if (imageUrl && imageUrl.startsWith('/uploads/')) {
+      const imagePath = path.join(process.cwd(), imageUrl);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
     }
   } catch (error) {
     console.error("Error deleting image file:", error);
@@ -95,6 +105,15 @@ export const createFlavor = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Flavor already exists" });
     }
 
+    // Handle uploaded image - upload to Cloudinary
+    let imageUrl: string | null = null;
+    let cloudinaryPublicId: string | null = null;
+    if (imageFile) {
+      const uploadResult = await uploadToCloudinary(imageFile, 'flavors');
+      imageUrl = uploadResult.url;
+      cloudinaryPublicId = uploadResult.public_id;
+    }
+
     const flavor = await prisma.$transaction(async (tx) => {
       // Create flavor with optional image
       const newFlavor = await tx.flavor.create({
@@ -102,7 +121,8 @@ export const createFlavor = async (req: Request, res: Response) => {
           name: name.trim(),
           aliases: aliasesArray.filter(Boolean),
           active: true,
-          imageUrl: imageFile ? `/uploads/flavors/${imageFile.filename}` : null,
+          imageUrl: imageUrl,
+          cloudinaryPublicId: cloudinaryPublicId,
         },
       });
 
@@ -140,7 +160,7 @@ export const updateFlavor = async (req: Request, res: Response) => {
     // Get the current flavor to check for existing image
     const currentFlavor = await prisma.flavor.findUnique({
       where: { id },
-      select: { imageUrl: true },
+      select: { imageUrl: true, cloudinaryPublicId: true },
     });
 
     if (!currentFlavor) {
@@ -172,11 +192,15 @@ export const updateFlavor = async (req: Request, res: Response) => {
 
     // If a new image is uploaded, update the imageUrl and delete the old one
     if (imageFile) {
-      // Delete the old image file if it exists
-      if (currentFlavor.imageUrl) {
-        deleteImageFile(currentFlavor.imageUrl);
+      // Upload to Cloudinary
+      const uploadResult = await uploadToCloudinary(imageFile, 'flavors');
+      updateData.imageUrl = uploadResult.url;
+      updateData.cloudinaryPublicId = uploadResult.public_id;
+      
+      // Delete the old image from Cloudinary if it exists
+      if (currentFlavor.cloudinaryPublicId) {
+        await deleteImageFile(null, currentFlavor.cloudinaryPublicId);
       }
-      updateData.imageUrl = `/uploads/flavors/${imageFile.filename}`;
     }
 
     const flavor = await prisma.flavor.update({
@@ -203,7 +227,7 @@ export const deleteFlavor = async (req: Request, res: Response) => {
     // Get the flavor to check for image before deletion
     const flavor = await prisma.flavor.findUnique({
       where: { id },
-      select: { imageUrl: true },
+      select: { imageUrl: true, cloudinaryPublicId: true },
     });
 
     if (!flavor) {
@@ -233,9 +257,9 @@ export const deleteFlavor = async (req: Request, res: Response) => {
       });
     });
 
-    // Delete the image file if it exists
-    if (flavor.imageUrl) {
-      deleteImageFile(flavor.imageUrl);
+    // Delete the image file from Cloudinary if it exists
+    if (flavor.cloudinaryPublicId) {
+      await deleteImageFile(null, flavor.cloudinaryPublicId);
     }
 
     res.json({ message: "Flavor deleted successfully" });
@@ -344,18 +368,24 @@ export const cleanupOrphanedImages = async (req: Request, res: Response) => {
 // Get all categories (Admin)
 export const getAllCategories = async (req: Request, res: Response) => {
   try {
-    const categories = await getAvailableCategories();
+    // Get categories from Category table
+    const categories = await prisma.category.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' }
+    });
 
     // Get category usage counts
     const categoryStats = await Promise.all(
       categories.map(async (category) => {
         const count = await prisma.product.count({
-          where: { category, isActive: true },
+          where: { category: category.name, isActive: true },
         });
         return {
-          name: category,
+          id: category.id,
+          name: category.name,
           productCount: count,
-          generatedCode: generateCategoryCode(category),
+          generatedCode: generateCategoryCode(category.name),
+          createdAt: category.createdAt,
         };
       })
     );
@@ -377,9 +407,9 @@ export const createCategory = async (req: Request, res: Response) => {
     }
 
     // Check if category already exists
-    const existingCategory = await prisma.product.findFirst({
+    const existingCategory = await prisma.category.findFirst({
       where: {
-        category: { equals: name.trim(), mode: "insensitive" },
+        name: { equals: name.trim(), mode: "insensitive" },
       },
     });
 
@@ -387,14 +417,88 @@ export const createCategory = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Category already exists" });
     }
 
-    res.json({
+    // Create the category
+    const category = await prisma.category.create({
+      data: {
+        name: name.trim(),
+        isActive: true,
+      },
+    });
+
+    res.status(201).json({
       message: "Category created successfully",
-      category: name.trim(),
-      generatedCode: generateCategoryCode(name.trim()),
+      category: {
+        id: category.id,
+        name: category.name,
+        generatedCode: generateCategoryCode(category.name),
+      },
     });
   } catch (err) {
     console.error("Create category error:", err);
     res.status(500).json({ message: "Error creating category" });
+  }
+};
+
+// Update category (Admin)
+export const updateCategory = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, isActive } = req.body;
+
+    const category = await prisma.category.update({
+      where: { id },
+      data: {
+        name: name ? name.trim() : undefined,
+        isActive: isActive !== undefined ? Boolean(isActive) : undefined,
+      },
+    });
+
+    res.json({
+      message: "Category updated successfully",
+      category: {
+        id: category.id,
+        name: category.name,
+        isActive: category.isActive,
+      },
+    });
+  } catch (err) {
+    console.error("Update category error:", err);
+    res.status(500).json({ message: "Error updating category" });
+  }
+};
+
+// Delete category (Admin)
+export const deleteCategory = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if category is used in any products
+    const category = await prisma.category.findUnique({
+      where: { id },
+    });
+
+    if (!category) {
+      return res.status(404).json({ message: "Category not found" });
+    }
+
+    const usageCount = await prisma.product.count({
+      where: { category: category.name },
+    });
+
+    if (usageCount > 0) {
+      return res.status(400).json({
+        message: `Cannot delete category. It is used in ${usageCount} product(s).`,
+      });
+    }
+
+    await prisma.category.delete({
+      where: { id },
+    });
+
+    res.json({ message: "Category deleted successfully" });
+  } catch (err) {
+    console.error("Delete category error:", err);
+    res.status(500).json({ message: "Error deleting category" });
   }
 };
 

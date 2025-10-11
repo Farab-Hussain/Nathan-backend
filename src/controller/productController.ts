@@ -1,26 +1,22 @@
 import { Request, Response } from "express";
 import { PrismaClient } from "../generated/prisma";
-import fs from "fs";
-import path from "path";
 import {
   validateFlavor,
   generateSKU,
   generateCustomSKU,
 } from "../utils/skuGenerator";
+import { uploadToCloudinary, deleteFromCloudinary } from "../config/cloudinary";
 
 const prisma = new PrismaClient();
 
-// Helper function to delete image file
-const deleteImageFile = (imageUrl: string | null) => {
-  if (!imageUrl) return;
+// Helper function to delete image from Cloudinary
+const deleteImageFile = async (imageUrl: string | null, publicId: string | null) => {
+  if (!publicId) return;
 
   try {
-    const imagePath = path.join(process.cwd(), imageUrl);
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
-    }
+    await deleteFromCloudinary(publicId);
   } catch (error) {
-    console.error("Error deleting image file:", error);
+    console.error("Error deleting image from Cloudinary:", error);
   }
 };
 
@@ -40,10 +36,13 @@ export const createProduct = async (req: Request, res: Response) => {
 
     const { name, description, price, stock, category } = req.body;
 
-    // Handle uploaded image
+    // Handle uploaded image - upload to Cloudinary
     let imageUrl: string | null = null;
+    let cloudinaryPublicId: string | null = null;
     if (req.file) {
-      imageUrl = `/uploads/products/${req.file.filename}`;
+      const uploadResult = await uploadToCloudinary(req.file, 'products');
+      imageUrl = uploadResult.url;
+      cloudinaryPublicId = uploadResult.public_id;
     }
 
     // Validate required fields
@@ -88,6 +87,7 @@ export const createProduct = async (req: Request, res: Response) => {
           stock: parseInt(stock),
           category,
           imageUrl,
+          cloudinaryPublicId,
           sku,
         },
       });
@@ -259,10 +259,22 @@ export const updateProduct = async (req: Request, res: Response) => {
 
     const { name, description, price, stock, category, isActive } = req.body;
 
-    // Handle uploaded image
+    // Handle uploaded image - upload to Cloudinary
     let imageUrl: string | null = null;
+    let cloudinaryPublicId: string | null = null;
     if (req.file) {
-      imageUrl = `/uploads/products/${req.file.filename}`;
+      const uploadResult = await uploadToCloudinary(req.file, 'products');
+      imageUrl = uploadResult.url;
+      cloudinaryPublicId = uploadResult.public_id;
+      
+      // Delete old image from Cloudinary if exists
+      const existingProduct = await prisma.product.findUnique({
+        where: { id },
+        select: { cloudinaryPublicId: true }
+      });
+      if (existingProduct?.cloudinaryPublicId) {
+        await deleteImageFile(null, existingProduct.cloudinaryPublicId);
+      }
     } else {
       // Keep existing imageUrl if no new file uploaded
       imageUrl = req.body.imageUrl;
@@ -297,6 +309,7 @@ export const updateProduct = async (req: Request, res: Response) => {
           stock: stock ? parseInt(stock) : undefined,
           category,
           imageUrl,
+          cloudinaryPublicId,
           isActive: isActive !== undefined ? Boolean(isActive) : undefined,
         },
       });
@@ -345,7 +358,7 @@ export const deleteProduct = async (req: Request, res: Response) => {
     // Check if product exists
     const existingProduct = await prisma.product.findUnique({
       where: { id },
-      select: { id: true, name: true, imageUrl: true }
+      select: { id: true, name: true, imageUrl: true, cloudinaryPublicId: true }
     });
 
     if (!existingProduct) {
@@ -375,9 +388,9 @@ export const deleteProduct = async (req: Request, res: Response) => {
       });
     });
 
-    // Delete the product image file if it exists
-    if (existingProduct.imageUrl) {
-      deleteImageFile(existingProduct.imageUrl);
+    // Delete the product image from Cloudinary if it exists
+    if (existingProduct.cloudinaryPublicId) {
+      await deleteImageFile(null, existingProduct.cloudinaryPublicId);
     }
 
     res.json({ message: "Product deleted successfully" });

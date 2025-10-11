@@ -8,6 +8,8 @@ import {
   cleanupOrphanedImages,
   getAllCategories,
   createCategory,
+  updateCategory,
+  deleteCategory,
   updateFlavorInventory,
   getInventoryAlerts,
   getSystemConfig,
@@ -36,6 +38,8 @@ router.post("/flavors/cleanup-images", cleanupOrphanedImages);
 // ==================== CATEGORY MANAGEMENT ====================
 router.get("/categories", getAllCategories);
 router.post("/categories", createCategory);
+router.put("/categories/:id", updateCategory);
+router.delete("/categories/:id", deleteCategory);
 
 // ==================== INVENTORY MANAGEMENT ====================
 router.put("/inventory/:id", updateFlavorInventory);

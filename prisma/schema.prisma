@@ -31,21 +31,30 @@ model User {
   orders                  Order[]
 }
 
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Product {
-  id             String          @id @default(cuid())
-  name           String
-  description    String?
-  price          Float
-  stock          Int             @default(0)
-  category       String
-  imageUrl       String?
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  sku            String?
-  CartItem       CartItem[]
-  orderItems     OrderItem[]
-  productFlavors ProductFlavor[]
+  id                  String          @id @default(cuid())
+  name                String
+  description         String?
+  price               Float
+  stock               Int             @default(0)
+  category            String
+  imageUrl            String?
+  cloudinaryPublicId  String?        // Cloudinary public ID for image deletion
+  isActive            Boolean         @default(true)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  sku                 String?
+  CartItem            CartItem[]
+  orderItems          OrderItem[]
+  productFlavors      ProductFlavor[]
 
   @@index([category])
   @@index([isActive])
@@ -124,16 +133,17 @@ model OrderItem {
 }
 
 model Flavor {
-  id              String           @id @default(cuid())
-  name            String           @unique
-  aliases         String[] // for search & import cleaning
-  imageUrl        String? // Flavor image URL
-  active          Boolean          @default(true)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  inventory       FlavorInventory?
-  packRecipeItems PackRecipeItem[]
-  productFlavors  ProductFlavor[]
+  id                  String           @id @default(cuid())
+  name                String           @unique
+  aliases             String[] // for search & import cleaning
+  imageUrl            String? // Flavor image URL
+  cloudinaryPublicId  String? // Cloudinary public ID for image deletion
+  active              Boolean          @default(true)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  inventory           FlavorInventory?
+  packRecipeItems     PackRecipeItem[]
+  productFlavors      ProductFlavor[]
 
   @@index([active])
 }
