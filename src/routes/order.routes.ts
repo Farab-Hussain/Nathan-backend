@@ -16,9 +16,11 @@ const router = express.Router();
 // Create order supports guest checkout
 router.post("/", optionalAuth, createOrder);
 
-// Other user routes require authentication
+// Get user's orders (requires authentication)
 router.get("/", protect, getUserOrders);
-router.get("/:id", protect, getOrderById);
+
+// Track order by ID (public - no authentication required)
+router.get("/:id", getOrderById);
 
 // Admin routes (admin role required)
 router.put("/:id/status", protect, adminOnly, updateOrderStatus);

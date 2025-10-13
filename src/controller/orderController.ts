@@ -473,11 +473,10 @@ export const getOrderById = async (req: Request, res: Response) => {
     const user = (req as any).user;
     const { id } = req.params;
 
-    const order = await prisma.order.findFirst({
-      where: {
-        id,
-        userId: user.id,
-      },
+    // Public order tracking - no authentication required
+    // Just find the order by ID
+    const order = await prisma.order.findUnique({
+      where: { id },
       include: {
         orderItems: {
           include: {
@@ -493,6 +492,7 @@ export const getOrderById = async (req: Request, res: Response) => {
 
     res.json(order);
   } catch (err) {
+    console.error("Error fetching order:", err);
     res.status(500).json({ message: "Error fetching order" });
   }
 };

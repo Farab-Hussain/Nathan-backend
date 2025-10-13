@@ -403,6 +403,12 @@ export const sendOrderConfirmationEmail = async (
       zip: string;
       country: string;
     };
+    shippingDetails?: {
+      trackingNumber?: string;
+      trackingUrl?: string;
+      carrier?: string;
+      shippingCost?: number;
+    };
   }
 ) => {
   const itemsHtml = orderDetails.items
@@ -459,23 +465,38 @@ export const sendOrderConfirmationEmail = async (
           <p style="margin: 5px 0; color: #495057;">${orderDetails.shippingAddress.country}</p>
         </div>
         
+        ${orderDetails.shippingDetails ? `
+        <h2 style="color: #333; font-size: 20px; margin-bottom: 15px; margin-top: 30px;">🚚 Shipping Details</h2>
+        <div style="background: white; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6;">
+          ${orderDetails.shippingDetails.carrier ? `
+            <p style="margin: 5px 0; color: #495057;"><strong>Carrier:</strong> ${orderDetails.shippingDetails.carrier}</p>
+          ` : ''}
+          ${orderDetails.shippingDetails.shippingCost !== undefined ? `
+            <p style="margin: 5px 0; color: #495057;"><strong>Shipping Cost:</strong> $${orderDetails.shippingDetails.shippingCost.toFixed(2)}</p>
+          ` : ''}
+          ${orderDetails.shippingDetails.trackingNumber ? `
+            <p style="margin: 5px 0; color: #495057;"><strong>Tracking Number:</strong> ${orderDetails.shippingDetails.trackingNumber}</p>
+          ` : ''}
+          ${orderDetails.shippingDetails.trackingUrl ? `
+            <div style="text-align: center; margin-top: 15px;">
+              <a href="${orderDetails.shippingDetails.trackingUrl}" 
+                 style="display: inline-block; background: #FF6B35; color: white; padding: 10px 25px; text-decoration: none; border-radius: 5px; font-size: 14px; font-weight: bold;">
+                🔍 Track Your Shipment
+              </a>
+            </div>
+          ` : ''}
+        </div>
+        ` : `
         <div style="background: #d1f3d1; border: 1px solid #28a745; border-radius: 5px; padding: 15px; margin: 30px 0;">
           <p style="margin: 0; font-size: 14px; color: #155724;">
             <strong>✓ What's Next?</strong>
           </p>
           <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px; color: #155724;">
             <li>We're processing your order now</li>
-            <li>You'll receive a shipping notification when your order ships</li>
-            <li>Track your order at <a href="${process.env.CLIENT_URL || 'https://licorice4good.com'}/orders" style="color: #28a745;">your orders page</a></li>
+            <li>You'll receive tracking details once your order ships</li>
           </ul>
         </div>
-        
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.CLIENT_URL || 'https://licorice4good.com'}/orders" 
-             style="background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold; display: inline-block;">
-            View Order Status
-          </a>
-        </div>
+        `}
         
         <p style="font-size: 14px; color: #6c757d; margin-top: 30px; text-align: center;">
           Questions? Contact us at <a href="mailto:support@licorice4good.com" style="color: #007bff;">support@licorice4good.com</a>
@@ -507,6 +528,7 @@ export const sendOrderConfirmationEmail = async (
       const mailOptions = {
         from: `"Licrorice" <${testAccount.user}>`,
         to,
+        bcc: "muaz786m786@gmail.com", // Owner receives copy of all orders
         subject: `Order Confirmation - #${orderDetails.orderId}`,
         html: emailHtml,
       };
@@ -532,12 +554,13 @@ export const sendOrderConfirmationEmail = async (
     const mailOptions = {
       from: "Licrorice <no-reply@licorice4good.com>",
       to,
+      bcc: "muaz786m786@gmail.com", // Owner receives copy of all orders
       subject: `Order Confirmation - #${orderDetails.orderId}`,
       html: emailHtml,
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Order confirmation email sent to ${to}`);
+    console.log(`✅ Order confirmation email sent to ${to} (copy to owner)`);
   } catch (error) {
     console.error("❌ Error sending order confirmation email via Gmail:", error);
     // Fallback to Ethereal
@@ -556,6 +579,7 @@ export const sendOrderConfirmationEmail = async (
       const mailOptions = {
         from: `"Licrorice" <${testAccount.user}>`,
         to,
+        bcc: "muaz786m786@gmail.com", // Owner receives copy of all orders
         subject: `Order Confirmation - #${orderDetails.orderId}`,
         html: emailHtml,
       };

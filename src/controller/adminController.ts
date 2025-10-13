@@ -91,18 +91,52 @@ export const createFlavor = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Flavor name is required" });
     }
 
-    // Check if flavor already exists
-    const existingFlavor = await prisma.flavor.findFirst({
+    // Check if flavor already exists (case-insensitive for both name and aliases)
+    const trimmedName = name.trim();
+    const lowerCaseName = trimmedName.toLowerCase();
+    
+    console.log(`Creating flavor: "${trimmedName}" with aliases:`, aliasesArray);
+    
+    const existingFlavors = await prisma.flavor.findMany({
       where: {
         OR: [
-          { name: { equals: name.trim(), mode: "insensitive" } },
-          { aliases: { has: name.trim() } },
+          { name: { equals: trimmedName, mode: "insensitive" } },
         ],
       },
     });
 
-    if (existingFlavor) {
-      return res.status(400).json({ message: "Flavor already exists" });
+    // Check name and aliases with case-insensitive comparison
+    for (const existingFlavor of existingFlavors) {
+      if (existingFlavor.name.toLowerCase() === lowerCaseName) {
+        return res.status(400).json({ 
+          message: `Flavor "${existingFlavor.name}" already exists` 
+        });
+      }
+      
+      // Check if the new name matches any existing aliases
+      if (existingFlavor.aliases.some(alias => alias.toLowerCase() === lowerCaseName)) {
+        return res.status(400).json({ 
+          message: `A flavor with alias "${trimmedName}" already exists` 
+        });
+      }
+    }
+
+    // Check if any of the new aliases conflict with existing flavor names or aliases
+    const allFlavors = await prisma.flavor.findMany();
+    for (const alias of aliasesArray) {
+      const lowerAlias = alias.toLowerCase();
+      for (const existingFlavor of allFlavors) {
+        if (existingFlavor.name.toLowerCase() === lowerAlias) {
+          return res.status(400).json({ 
+            message: `Alias "${alias}" conflicts with existing flavor "${existingFlavor.name}"` 
+          });
+        }
+        if (existingFlavor.aliases.some(a => a.toLowerCase() === lowerAlias)) {
+          return res.status(400).json({ 
+            message: `Alias "${alias}" already exists in flavor "${existingFlavor.name}"` 
+          });
+        }
+      }
     }
 
     // Handle uploaded image - upload to Cloudinary
@@ -144,9 +178,23 @@ export const createFlavor = async (req: Request, res: Response) => {
       flavor,
       generatedCode: generateFlavorCode(name.trim()),
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error("Create flavor error:", err);
-    res.status(500).json({ message: "Error creating flavor" });
+    
+    // Provide more specific error messages
+    let errorMessage = "Error creating flavor";
+    
+    if (err.code === 'P2002') {
+      // Prisma unique constraint violation
+      errorMessage = "A flavor with this name already exists";
+    } else if (err.message) {
+      errorMessage = err.message;
+    }
+    
+    res.status(500).json({ 
+      message: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 };
 

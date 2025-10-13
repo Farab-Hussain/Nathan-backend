@@ -68,7 +68,7 @@ router.post("/create-checkout-session", async (req, res) => {
           state: orderData.shippingAddress.state,
           zip: orderData.shippingAddress.zipCode,
           country: orderData.shippingAddress.country,
-        };
+      };
       }
       
       const dataString = JSON.stringify(compressedData);
@@ -475,44 +475,89 @@ router.post("/webhook", async (req, res) => {
           processingTime: Date.now() - webhookStartTime + "ms",
         });
 
-        // Send order confirmation email for retry payment
-        try {
-          const customerEmail = fullSession.customer_details?.email;
-          if (customerEmail) {
-            // Fetch order items for email
-            const orderWithItems = await prisma.order.findUnique({
-              where: { id: orderId },
-              include: { orderItems: true },
-            });
+        // Decrement inventory for retry payment (only if payment was previously pending/failed)
+        if (existingOrder.paymentStatus !== "paid") {
+          console.log("📦 Decrementing inventory for retry payment...");
+          console.log(`   Previous payment status: ${existingOrder.paymentStatus}`);
+          
+          const orderWithItems = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { orderItems: true },
+          });
 
-            if (orderWithItems) {
-              const shippingAddr = updatedOrder.shippingAddress as any;
-              await sendOrderConfirmationEmail(customerEmail, {
-                orderId: updatedOrder.id,
-                customerName: shippingAddr?.name || 'Customer',
-                total: updatedOrder.total,
-                items: orderWithItems.orderItems.map((item: any) => ({
-                  name: item.customPackName || `Product #${item.productId}`,
-                  quantity: item.quantity,
-                  price: item.price,
-                })),
-                shippingAddress: {
-                  street1: shippingAddr?.street1 || '',
-                  city: shippingAddr?.city || '',
-                  state: shippingAddr?.state || '',
-                  zip: shippingAddr?.zip || '',
-                  country: shippingAddr?.country || '',
-                },
-              });
-              console.log("📧 Order confirmation email sent for retry payment");
+          if (orderWithItems) {
+            console.log(`   Total items to process: ${orderWithItems.orderItems.length}`);
+            
+            for (const item of orderWithItems.orderItems) {
+              console.log(`\n   Processing retry item: ${JSON.stringify({
+                productId: item.productId,
+                quantity: item.quantity,
+                flavorIds: item.flavorIds,
+                isCustomPack: item.productId === "3-pack"
+              })}`);
+              
+              try {
+                if (item.productId === "3-pack" && item.flavorIds && item.flavorIds.length > 0) {
+                  console.log(`   → Custom Pack detected, processing ${item.flavorIds.length} flavors...`);
+                  // Handle custom packs - decrement flavor inventory
+                  for (const flavorId of item.flavorIds) {
+                    const flavorBefore = await prisma.flavorInventory.findUnique({
+                      where: { flavorId },
+                      select: { onHand: true, reserved: true, flavorId: true }
+                    });
+                    console.log(`   → Flavor ${flavorId} before: onHand=${flavorBefore?.onHand}, reserved=${flavorBefore?.reserved}`);
+                    
+                    await prisma.flavorInventory.update({
+                      where: { flavorId },
+                      data: {
+                        onHand: { decrement: item.quantity },
+                        reserved: { decrement: item.quantity },
+                      },
+                    });
+                    
+                    const flavorAfter = await prisma.flavorInventory.findUnique({
+                      where: { flavorId },
+                      select: { onHand: true, reserved: true }
+                    });
+                    console.log(`   ✓ Flavor ${flavorId} after: onHand=${flavorAfter?.onHand}, reserved=${flavorAfter?.reserved}`);
+                  }
+                } else {
+                  console.log(`   → Regular Product detected, updating stock...`);
+                  // Handle regular products - decrement product stock
+                  const productBefore = await prisma.product.findUnique({
+                    where: { id: item.productId },
+                    select: { id: true, name: true, stock: true }
+                  });
+                  console.log(`   → Product BEFORE: ${JSON.stringify(productBefore)}`);
+                  
+                  if (!productBefore) {
+                    console.error(`   ❌ Product ${item.productId} not found in database!`);
+                    continue;
+                  }
+                  
+                  const updatedProduct = await prisma.product.update({
+                    where: { id: item.productId },
+                    data: {
+                      stock: { decrement: item.quantity },
+                    },
+                    select: { id: true, name: true, stock: true }
+                  });
+                  console.log(`   ✓ Product AFTER: ${JSON.stringify(updatedProduct)}`);
+                  console.log(`   ✓ Stock decreased from ${productBefore.stock} to ${updatedProduct.stock}`);
+                }
+              } catch (invError) {
+                console.error(`   ❌ Error updating inventory for item ${item.id}:`, invError);
+                console.error(`   ❌ Error details:`, invError instanceof Error ? invError.message : invError);
+              }
             }
+            console.log("\n✅ Retry payment inventory decrementation complete");
           }
-        } catch (emailError) {
-          console.error("❌ Error sending order confirmation email:", emailError);
-          // Don't fail the order update if email fails
+        } else {
+          console.log("⏭️ Skipping inventory decrementation - payment already marked as paid");
         }
 
-        // Create Shippo shipment for the updated order if it doesn't exist
+        // Create Shippo shipment for the updated order if it doesn't exist (BEFORE email)
+        let retryShippingDetails: any = undefined;
         if (!updatedOrder.shipmentId) {
           try {
             const { getShippingRates, createShipment } = await import("../services/shippoService");
@@ -535,6 +580,7 @@ router.post("/webhook", async (req, res) => {
               
               if (rates.length > 0) {
                 // Use the first rate
+                const selectedRate = rates[0];
                 await createShipment({
                   orderId: updatedOrder.id,
                   toAddress: shippingAddress,
@@ -546,8 +592,28 @@ router.post("/webhook", async (req, res) => {
                     massUnit: 'lb' as const,
                     distanceUnit: 'in' as const,
                   }],
-                }, rates[0].objectId);
+                }, selectedRate.objectId);
                 console.log("📦 Shippo shipment created for updated order");
+                
+                // Fetch updated order with shipment details
+                const orderWithShipment = await prisma.order.findUnique({
+                  where: { id: orderId },
+                  select: {
+                    trackingNumber: true,
+                    trackingUrl: true,
+                    shippingCarrier: true,
+                    shippingCost: true,
+                  }
+                });
+                
+                if (orderWithShipment) {
+                  retryShippingDetails = {
+                    trackingNumber: orderWithShipment.trackingNumber,
+                    trackingUrl: orderWithShipment.trackingUrl,
+                    carrier: orderWithShipment.shippingCarrier,
+                    shippingCost: orderWithShipment.shippingCost ?? selectedRate.amount,
+                  };
+                }
               } else {
                 console.log("⚠️ No shipping rates available for updated order");
               }
@@ -556,6 +622,95 @@ router.post("/webhook", async (req, res) => {
             console.error("⚠️ Failed to create Shippo shipment for updated order:", shipmentError);
             // Don't fail the webhook for shipment errors
           }
+        } else {
+          // Fetch existing shipment details
+          const orderWithShipment = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: {
+              trackingNumber: true,
+              trackingUrl: true,
+              shippingCarrier: true,
+              shippingCost: true,
+            }
+          });
+          
+          if (orderWithShipment) {
+            retryShippingDetails = {
+              trackingNumber: orderWithShipment.trackingNumber,
+              trackingUrl: orderWithShipment.trackingUrl,
+              carrier: orderWithShipment.shippingCarrier,
+              shippingCost: orderWithShipment.shippingCost,
+            };
+          }
+        }
+
+        // Send order confirmation email for retry payment with shipping details
+        try {
+          const customerEmail = fullSession.customer_details?.email;
+          if (customerEmail) {
+            // Fetch order items for email
+            const orderWithItems = await prisma.order.findUnique({
+              where: { id: orderId },
+              include: { orderItems: true },
+            });
+
+            if (orderWithItems) {
+              const shippingAddr = updatedOrder.shippingAddress as any;
+              
+              // Fetch product names for order items
+              const retryItemsWithNames = await Promise.all(
+                orderWithItems.orderItems.map(async (item: any) => {
+                  if (item.customPackName) {
+                    return {
+                      name: item.customPackName,
+                      quantity: item.quantity,
+                      price: item.price,
+                    };
+                  }
+                  
+                  // Fetch product name from database
+                  try {
+                    const product = await prisma.product.findUnique({
+                      where: { id: item.productId },
+                      select: { name: true },
+                    });
+                    
+                    return {
+                      name: product?.name || `Product #${item.productId}`,
+                      quantity: item.quantity,
+                      price: item.price,
+                    };
+                  } catch (err) {
+                    console.error(`Error fetching product name for ${item.productId}:`, err);
+                    return {
+                      name: `Product #${item.productId}`,
+                      quantity: item.quantity,
+                      price: item.price,
+                    };
+                  }
+                })
+              );
+              
+              await sendOrderConfirmationEmail(customerEmail, {
+                orderId: updatedOrder.id,
+                customerName: shippingAddr?.name || 'Customer',
+                total: updatedOrder.total,
+                items: retryItemsWithNames,
+                shippingAddress: {
+                  street1: shippingAddr?.street1 || '',
+                  city: shippingAddr?.city || '',
+                  state: shippingAddr?.state || '',
+                  zip: shippingAddr?.zip || '',
+                  country: shippingAddr?.country || '',
+                },
+                shippingDetails: retryShippingDetails,
+              });
+              console.log("📧 Order confirmation email sent for retry payment with shipping details");
+            }
+          }
+        } catch (emailError) {
+          console.error("❌ Error sending order confirmation email:", emailError);
+          // Don't fail the order update if email fails
         }
       } else if (fullSession.metadata?.orderData) {
         // Create new order from metadata (ONLY after successful payment)
@@ -674,34 +829,87 @@ router.post("/webhook", async (req, res) => {
             status: newOrder.status,
             paymentStatus: newOrder.paymentStatus,
             total: newOrder.total,
+            itemsCount: newOrder.orderItems.length,
           });
 
-          // Send order confirmation email
-          try {
-            await sendOrderConfirmationEmail(customerEmail, {
-              orderId: newOrder.id,
-              customerName: orderData.shippingAddress.name || 'Customer',
-              total: newOrder.total,
-              items: newOrder.orderItems.map((item: any) => ({
-                name: item.customPackName || `Product #${item.productId}`,
-                quantity: item.quantity,
-                price: item.price,
-              })),
-              shippingAddress: {
-                street1: orderData.shippingAddress.street1,
-                city: orderData.shippingAddress.city,
-                state: orderData.shippingAddress.state,
-                zip: orderData.shippingAddress.zip,
-                country: orderData.shippingAddress.country,
-              },
-            });
-            console.log("📧 Order confirmation email sent successfully");
-          } catch (emailError) {
-            console.error("❌ Error sending order confirmation email:", emailError);
-            // Don't fail the order creation if email fails
-          }
+          // Log order items details for debugging
+          console.log("📋 Order items details:");
+          newOrder.orderItems.forEach((item, index) => {
+            console.log(`   ${index + 1}. ProductID: ${item.productId}, Qty: ${item.quantity}, FlavorIDs: ${JSON.stringify(item.flavorIds)}`);
+          });
 
-          // Create Shippo shipment for the new order
+          // Decrement inventory for the order
+          console.log("📦 Decrementing inventory for order items...");
+          console.log(`   Total items to process: ${newOrder.orderItems.length}`);
+          
+          for (const item of newOrder.orderItems) {
+            console.log(`\n   Processing item: ${JSON.stringify({
+              productId: item.productId,
+              quantity: item.quantity,
+              flavorIds: item.flavorIds,
+              isCustomPack: item.productId === "3-pack"
+            })}`);
+            
+            try {
+              // For 3-pack products, we need to deduct from flavor inventory
+              if (item.productId === "3-pack" && item.flavorIds && item.flavorIds.length > 0) {
+                console.log(`   → Custom Pack detected, processing ${item.flavorIds.length} flavors...`);
+                // Handle custom packs - decrement flavor inventory
+                for (const flavorId of item.flavorIds) {
+                  const flavorBefore = await prisma.flavorInventory.findUnique({
+                    where: { flavorId },
+                    select: { onHand: true, reserved: true, flavorId: true }
+                  });
+                  console.log(`   → Flavor ${flavorId} before: onHand=${flavorBefore?.onHand}, reserved=${flavorBefore?.reserved}`);
+                  
+                  await prisma.flavorInventory.update({
+                    where: { flavorId },
+                    data: {
+                      onHand: { decrement: item.quantity },
+                      reserved: { decrement: item.quantity },
+                    },
+                  });
+                  
+                  const flavorAfter = await prisma.flavorInventory.findUnique({
+                    where: { flavorId },
+                    select: { onHand: true, reserved: true }
+                  });
+                  console.log(`   ✓ Flavor ${flavorId} after: onHand=${flavorAfter?.onHand}, reserved=${flavorAfter?.reserved}`);
+                }
+              } else {
+                console.log(`   → Regular Product detected, updating stock...`);
+                // Handle regular products - decrement product stock
+                const productBefore = await prisma.product.findUnique({
+                  where: { id: item.productId },
+                  select: { id: true, name: true, stock: true }
+                });
+                console.log(`   → Product BEFORE: ${JSON.stringify(productBefore)}`);
+                
+                if (!productBefore) {
+                  console.error(`   ❌ Product ${item.productId} not found in database!`);
+                  continue;
+                }
+                
+                const updatedProduct = await prisma.product.update({
+                  where: { id: item.productId },
+                  data: {
+                    stock: { decrement: item.quantity },
+                  },
+                  select: { id: true, name: true, stock: true }
+                });
+                console.log(`   ✓ Product AFTER: ${JSON.stringify(updatedProduct)}`);
+                console.log(`   ✓ Stock decreased from ${productBefore.stock} to ${updatedProduct.stock}`);
+              }
+            } catch (invError) {
+              console.error(`   ❌ Error updating inventory for item ${item.id}:`, invError);
+              console.error(`   ❌ Error details:`, invError instanceof Error ? invError.message : invError);
+              // Continue with other items even if one fails
+            }
+          }
+          console.log("\n✅ Inventory decrementation complete");
+
+          // Create Shippo shipment for the new order FIRST
+          let shippingDetails: any = undefined;
           try {
             const { getShippingRates, createShipment } = await import("../services/shippoService");
             
@@ -739,7 +947,8 @@ router.post("/webhook", async (req, res) => {
             
             if (rates.length > 0) {
               // Use the first rate
-              await createShipment({
+              const selectedRate = rates[0];
+              const shipmentResult = await createShipment({
                 orderId: newOrder.id,
                 toAddress: orderData.shippingAddress as any,
                 parcels: [{
@@ -750,14 +959,92 @@ router.post("/webhook", async (req, res) => {
                   massUnit: 'lb' as const,
                   distanceUnit: 'in' as const,
                 }],
-              }, rates[0].objectId);
+              }, selectedRate.objectId);
+              
               console.log("📦 Shippo shipment created for new order");
+              
+              // Fetch the updated order with shipment details
+              const orderWithShipment = await prisma.order.findUnique({
+                where: { id: newOrder.id },
+                select: {
+                  trackingNumber: true,
+                  trackingUrl: true,
+                  shippingCarrier: true,
+                  shippingCost: true,
+                }
+              });
+              
+              if (orderWithShipment) {
+                shippingDetails = {
+                  trackingNumber: orderWithShipment.trackingNumber,
+                  trackingUrl: orderWithShipment.trackingUrl,
+                  carrier: orderWithShipment.shippingCarrier,
+                  shippingCost: orderWithShipment.shippingCost ?? selectedRate.amount,
+                };
+                console.log("📦 Shipping details prepared for email:", shippingDetails);
+              }
             } else {
               console.log("⚠️ No shipping rates available for new order");
             }
           } catch (shipmentError) {
             console.error("⚠️ Failed to create Shippo shipment:", shipmentError);
             // Don't fail the webhook for shipment errors
+          }
+
+          // Send order confirmation email with shipping details
+          try {
+            // Fetch product names for order items
+            const itemsWithNames = await Promise.all(
+              newOrder.orderItems.map(async (item: any) => {
+                if (item.customPackName) {
+                  return {
+                    name: item.customPackName,
+                    quantity: item.quantity,
+                    price: item.price,
+                  };
+                }
+                
+                // Fetch product name from database
+                try {
+                  const product = await prisma.product.findUnique({
+                    where: { id: item.productId },
+                    select: { name: true },
+                  });
+                  
+                  return {
+                    name: product?.name || `Product #${item.productId}`,
+                    quantity: item.quantity,
+                    price: item.price,
+                  };
+                } catch (err) {
+                  console.error(`Error fetching product name for ${item.productId}:`, err);
+                  return {
+                    name: `Product #${item.productId}`,
+                    quantity: item.quantity,
+                    price: item.price,
+                  };
+                }
+              })
+            );
+            
+            await sendOrderConfirmationEmail(customerEmail, {
+              orderId: newOrder.id,
+              customerName: orderData.shippingAddress.name || 'Customer',
+              total: newOrder.total,
+              items: itemsWithNames,
+              shippingAddress: {
+                street1: orderData.shippingAddress.street1,
+                city: orderData.shippingAddress.city,
+                state: orderData.shippingAddress.state,
+                zip: orderData.shippingAddress.zip,
+                country: orderData.shippingAddress.country,
+              },
+              shippingDetails: shippingDetails,
+            });
+            console.log("📧 Order confirmation email sent successfully with shipping details");
+          } catch (emailError) {
+            console.error("❌ Error sending order confirmation email:", emailError);
+            // Don't fail the order creation if email fails
           }
 
           return res.json({ received: true, orderCreated: true });

@@ -23,7 +23,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit (Cloudinary free tier friendly)
+    fileSize: 500 * 1024 * 1024, // 500MB limit - Cloudinary will handle compression
     files: 10, // Maximum 10 files
   },
 });
@@ -52,9 +52,9 @@ export const handleUploadError = (
     if (error.code === "LIMIT_FILE_SIZE") {
       return res.status(413).json({
         message:
-          "File too large. Maximum size is 50MB. Please compress your image and try again.",
+          "File too large. Maximum size is 500MB. Please compress your image and try again.",
         code: "FILE_TOO_LARGE",
-        maxSize: "50MB",
+        maxSize: "500MB",
       });
     }
     if (error.code === "LIMIT_FILE_COUNT") {

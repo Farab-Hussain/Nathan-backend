@@ -86,11 +86,11 @@ app.use((req, res, next) => {
   if (req.originalUrl === "/payments/webhook" || req.originalUrl === "/shippo/webhook") {
     express.raw({ type: "application/json" })(req, res, next);
   } else {
-    express.json({ limit: "50mb" })(req, res, next);
+    express.json({ limit: "500mb" })(req, res, next);
   }
 });
 
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "500mb" }));
 app.use(cookieParser());
 
 // Serve static files (uploaded images) with CORS headers
