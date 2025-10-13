@@ -592,7 +592,11 @@ router.post("/webhook", async (req, res) => {
                     massUnit: 'lb' as const,
                     distanceUnit: 'in' as const,
                   }],
-                }, selectedRate.objectId);
+                }, selectedRate.objectId, {
+                  carrier: selectedRate.carrier,
+                  amount: selectedRate.amount,
+                  serviceName: selectedRate.serviceName
+                });
                 console.log("📦 Shippo shipment created for updated order");
                 
                 // Fetch updated order with shipment details
@@ -725,14 +729,13 @@ router.post("/webhook", async (req, res) => {
             return res.status(400).json({ error: "Customer email required" });
           }
 
-          // Find user by email
+          // Find user by email (optional for guest checkout)
           const user = await prisma.user.findUnique({
             where: { email: customerEmail },
           });
 
           if (!user) {
-            console.error("❌ User not found for email:", customerEmail);
-            return res.status(404).json({ error: "User not found" });
+            console.log("ℹ️ User not found, creating guest order for email:", customerEmail);
           }
 
           // Get shipping address - either from metadata or Stripe-collected details
@@ -800,9 +803,12 @@ router.post("/webhook", async (req, res) => {
           };
 
           // Create order with confirmed status and paid payment status
+          // Support both registered users and guest checkout
           const newOrder = await prisma.order.create({
             data: {
-              userId: user.id,
+              userId: user?.id || null,  // NULL for guest checkout
+              guestId: user ? null : `guest_${customerEmail}`,  // Guest ID if no user
+              guestEmail: user ? null : customerEmail,  // Guest email if no user
               status: "confirmed",
               paymentStatus: "paid",
               total: orderData.total,
@@ -830,6 +836,8 @@ router.post("/webhook", async (req, res) => {
             paymentStatus: newOrder.paymentStatus,
             total: newOrder.total,
             itemsCount: newOrder.orderItems.length,
+            isGuestOrder: !user,
+            customerEmail: customerEmail,
           });
 
           // Log order items details for debugging
@@ -959,7 +967,11 @@ router.post("/webhook", async (req, res) => {
                   massUnit: 'lb' as const,
                   distanceUnit: 'in' as const,
                 }],
-              }, selectedRate.objectId);
+              }, selectedRate.objectId, {
+                carrier: selectedRate.carrier,
+                amount: selectedRate.amount,
+                serviceName: selectedRate.serviceName
+              });
               
               console.log("📦 Shippo shipment created for new order");
               

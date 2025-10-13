@@ -51,7 +51,7 @@ export const getShippingRatesController = async (req: Request, res: Response) =>
 // Create shipment
 export const createShipmentController = async (req: Request, res: Response) => {
   try {
-    const { orderId, address, parcels, selectedRateId } = req.body;
+    const { orderId, address, parcels, selectedRateId, rateData } = req.body;
     
     if (!orderId || !address || !parcels || !selectedRateId) {
       return res.status(400).json({ 
@@ -60,7 +60,11 @@ export const createShipmentController = async (req: Request, res: Response) => {
       });
     }
 
-    const shipment = await createShipment({ orderId, toAddress: address, parcels }, selectedRateId);
+    const shipment = await createShipment(
+      { orderId, toAddress: address, parcels }, 
+      selectedRateId,
+      rateData // Optional: { carrier, amount, serviceName }
+    );
     
     res.json(shipment);
   } catch (error) {

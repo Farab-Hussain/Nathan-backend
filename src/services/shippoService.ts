@@ -197,7 +197,11 @@ export const getShippingRates = async (toAddress: ShippingAddress, parcels: Ship
 };
 
 // Create shipment and purchase label
-export const createShipment = async (shipmentData: ShipmentData, selectedRateId: string) => {
+export const createShipment = async (
+  shipmentData: ShipmentData, 
+  selectedRateId: string,
+  selectedRateData?: { carrier: string; amount: number; serviceName: string }
+) => {
   try {
     const shippo = getShippoClient();
     
@@ -392,11 +396,19 @@ export const createShipment = async (shipmentData: ShipmentData, selectedRateId:
 
     // Extract carrier and service information
     console.log('🔍 Transaction rate data:', JSON.stringify(transaction.rate, null, 2));
-    const carrier = (typeof transaction.rate === 'object' ? transaction.rate?.provider : '') || 'Unknown';
-    const service = (typeof transaction.rate === 'object' ? transaction.rate?.servicelevelName : '') || 'Standard';
-    const cost = typeof transaction.rate === 'object' ? parseFloat(transaction.rate?.amount || '0') : 0;
     
-    console.log('📋 Extracted carrier info:', { carrier, service, cost });
+    // Use selectedRateData if provided (most reliable), otherwise try to extract from transaction.rate
+    const carrier = selectedRateData?.carrier || 
+                    (typeof transaction.rate === 'object' ? transaction.rate?.provider : '') || 
+                    'Unknown';
+    const service = selectedRateData?.serviceName || 
+                    (typeof transaction.rate === 'object' ? transaction.rate?.servicelevelName : '') || 
+                    'Standard';
+    const cost = selectedRateData?.amount || 
+                 (typeof transaction.rate === 'object' ? parseFloat(transaction.rate?.amount || '0') : 0) || 
+                 0;
+    
+    console.log('📋 Extracted carrier info:', { carrier, service, cost, fromSelectedRate: !!selectedRateData });
 
     console.log('📦 Shipment details:', {
       carrier,

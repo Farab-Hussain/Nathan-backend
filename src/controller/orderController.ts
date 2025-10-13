@@ -384,7 +384,11 @@ export const createOrder = async (req: Request, res: Response) => {
             orderId: order.id,
             toAddress: shippoAddress,
             parcels,
-          }, selectedRate.objectId);
+          }, selectedRate.objectId, {
+            carrier: selectedRate.carrier,
+            amount: selectedRate.amount,
+            serviceName: selectedRate.serviceName
+          });
           
           console.log('📦 Shipment created:', shipmentData);
         }
