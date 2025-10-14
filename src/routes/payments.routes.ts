@@ -79,6 +79,10 @@ router.post("/create-checkout-session", async (req, res) => {
       metadata.orderData = dataString;
     }
 
+    // Check if shipping address is provided in metadata (pre-collected on frontend)
+    const hasPreCollectedAddress = metadata.orderData && 
+      JSON.parse(metadata.orderData || "{}").address;
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items,
@@ -88,21 +92,16 @@ router.post("/create-checkout-session", async (req, res) => {
       cancel_url: cancelUrl || `${process.env.CLIENT_URL}/cart`,
       metadata,
       billing_address_collection: "required",
+      // Only collect shipping address if not pre-collected on frontend
+      ...(hasPreCollectedAddress ? {} : {
       shipping_address_collection: {
-        allowed_countries: ["US", "CA", "GB", "AU"],
-      },
-      shipping_options: [
-        {
-          shipping_rate_data: {
-            display_name: "Standard Shipping",
-            type: "fixed_amount",
-            fixed_amount: { amount: 0, currency: "usd" },
-          },
+          allowed_countries: ["US", "CA", "GB", "AU"],
         },
-      ],
-      phone_number_collection: {
-        enabled: true,
-      },
+        phone_number_collection: {
+          enabled: true,
+        },
+      }),
+      // No shipping options - shipping is included as a line item
     });
 
     return res.json({ url: session.url });
@@ -493,12 +492,12 @@ router.post("/webhook", async (req, res) => {
                 productId: item.productId,
                 quantity: item.quantity,
                 flavorIds: item.flavorIds,
-                isCustomPack: item.productId === "3-pack"
+                isCustomPack: !item.productId
               })}`);
               
               try {
-                if (item.productId === "3-pack" && item.flavorIds && item.flavorIds.length > 0) {
-                  console.log(`   → Custom Pack detected, processing ${item.flavorIds.length} flavors...`);
+                if (!item.productId && item.flavorIds && item.flavorIds.length > 0) {
+                  console.log(`   → Custom Pack detected (null productId), processing ${item.flavorIds.length} flavors...`);
                   // Handle custom packs - decrement flavor inventory
                   for (const flavorId of item.flavorIds) {
                     const flavorBefore = await prisma.flavorInventory.findUnique({
@@ -521,7 +520,7 @@ router.post("/webhook", async (req, res) => {
                     });
                     console.log(`   ✓ Flavor ${flavorId} after: onHand=${flavorAfter?.onHand}, reserved=${flavorAfter?.reserved}`);
                   }
-                } else {
+                } else if (item.productId) {
                   console.log(`   → Regular Product detected, updating stock...`);
                   // Handle regular products - decrement product stock
                   const productBefore = await prisma.product.findUnique({
@@ -855,13 +854,13 @@ router.post("/webhook", async (req, res) => {
               productId: item.productId,
               quantity: item.quantity,
               flavorIds: item.flavorIds,
-              isCustomPack: item.productId === "3-pack"
+              isCustomPack: !item.productId
             })}`);
             
             try {
-              // For 3-pack products, we need to deduct from flavor inventory
-              if (item.productId === "3-pack" && item.flavorIds && item.flavorIds.length > 0) {
-                console.log(`   → Custom Pack detected, processing ${item.flavorIds.length} flavors...`);
+              // For custom pack products (null productId), we need to deduct from flavor inventory
+              if (!item.productId && item.flavorIds && item.flavorIds.length > 0) {
+                console.log(`   → Custom Pack detected (null productId), processing ${item.flavorIds.length} flavors...`);
                 // Handle custom packs - decrement flavor inventory
                 for (const flavorId of item.flavorIds) {
                   const flavorBefore = await prisma.flavorInventory.findUnique({
@@ -884,7 +883,7 @@ router.post("/webhook", async (req, res) => {
                   });
                   console.log(`   ✓ Flavor ${flavorId} after: onHand=${flavorAfter?.onHand}, reserved=${flavorAfter?.reserved}`);
                 }
-              } else {
+              } else if (item.productId) {
                 console.log(`   → Regular Product detected, updating stock...`);
                 // Handle regular products - decrement product stock
                 const productBefore = await prisma.product.findUnique({

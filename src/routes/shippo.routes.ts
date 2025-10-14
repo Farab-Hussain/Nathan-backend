@@ -3,14 +3,16 @@ import {
   validateShippingAddress, 
   getShippingRatesController, 
   createShipmentController, 
-  shippoWebhook 
+  shippoWebhook,
+  calculateCheckoutRates 
 } from '../controller/shippoController';
 import { protect } from '../middlewares/auth.middleware';
 
 const router = express.Router();
 
-// Public webhook endpoint (no auth required)
+// Public routes (no auth required)
 router.post('/webhook', shippoWebhook);
+router.post('/calculate-rates', calculateCheckoutRates); // Public for guest checkout
 
 // Protected routes (require authentication)
 router.use(protect);

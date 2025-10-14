@@ -1,5 +1,8 @@
 import { Request, Response } from 'express';
 import { validateAddress, getShippingRates, createShipment, handleWebhookEvent } from '../services/shippoService';
+import { PrismaClient } from '../generated/prisma';
+
+const prisma = new PrismaClient();
 
 // Validate shipping address
 export const validateShippingAddress = async (req: Request, res: Response) => {
@@ -45,6 +48,80 @@ export const getShippingRatesController = async (req: Request, res: Response) =>
   } catch (error) {
     console.error('Shipping rates error:', error);
     res.status(500).json({ error: 'Failed to get shipping rates' });
+  }
+};
+
+// Calculate shipping rates for checkout (before payment)
+export const calculateCheckoutRates = async (req: Request, res: Response) => {
+  try {
+    const { shippingAddress, orderItems } = req.body;
+    
+    if (!shippingAddress || !orderItems || !Array.isArray(orderItems)) {
+      return res.status(400).json({ 
+        error: 'Shipping address and order items are required',
+        required: ['shippingAddress', 'orderItems']
+      });
+    }
+
+    console.log('📦 Calculating checkout shipping rates for:', {
+      address: shippingAddress,
+      itemsCount: orderItems.length,
+    });
+
+    // Calculate total weight and dimensions based on items
+    let totalWeight = 0;
+    let totalItems = 0;
+    
+    for (const item of orderItems) {
+      if (!item.productId && item.flavorIds && item.flavorIds.length > 0) {
+        // Custom pack - count flavors
+        totalItems += item.quantity * item.flavorIds.length;
+        totalWeight += item.quantity * item.flavorIds.length * 0.25; // 0.25 lbs per flavor
+      } else if (item.productId) {
+        // Regular product - fetch from database
+        const product = await prisma.product.findUnique({
+          where: { id: item.productId },
+          select: { name: true },
+        });
+        totalItems += item.quantity;
+        totalWeight += item.quantity * 0.5; // Estimate 0.5 lbs per regular product
+      }
+    }
+
+    // Create parcel based on total items (simplified)
+    const parcels = [{
+      length: String(Math.ceil(totalItems / 3) * 4 + 2), // Estimate length
+      width: "8",
+      height: "6",
+      distanceUnit: "in" as "in",
+      weight: String(totalWeight || 1), // Minimum 1 lb
+      massUnit: "lb" as "lb"
+    }];
+
+    console.log('📦 Calculated parcels:', parcels);
+
+    // Get shipping rates from Shippo
+    const rates = await getShippingRates(shippingAddress, parcels);
+    
+    // Format rates for frontend
+    const formattedRates = rates.map((rate: any) => ({
+      objectId: rate.objectId,
+      carrier: rate.carrier,
+      serviceName: rate.serviceName,
+      amount: rate.amount,
+      estimatedDays: rate.estimatedDays,
+      currency: rate.currency,
+    }));
+
+    console.log('✅ Shipping rates calculated:', formattedRates);
+
+    res.json({ 
+      rates: formattedRates,
+      parcels 
+    });
+  } catch (error) {
+    console.error('Checkout rates calculation error:', error);
+    res.status(500).json({ error: 'Failed to calculate shipping rates' });
   }
 };
 

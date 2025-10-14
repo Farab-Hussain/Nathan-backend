@@ -113,7 +113,7 @@ model Order {
 model OrderItem {
   id        String   @id @default(cuid())
   orderId   String
-  productId String
+  productId String?  // Made optional for custom packs
   quantity  Int
   price     Float
   total     Float
@@ -125,7 +125,7 @@ model OrderItem {
 
   // Relations
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
 
   @@index([orderId])
   @@index([productId])

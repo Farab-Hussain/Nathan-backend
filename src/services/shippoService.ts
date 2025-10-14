@@ -159,6 +159,11 @@ export const getShippingRates = async (toAddress: ShippingAddress, parcels: Ship
       parcels: parcels,
     });
 
+    // Log first rate in full to debug field names
+    if (shipment.rates && shipment.rates.length > 0) {
+      console.log('🔍 First rate object (full):', JSON.stringify(shipment.rates[0], null, 2));
+    }
+
     console.log('📦 Shippo shipment response:', {
       objectId: shipment.objectId,
       status: shipment.status,
@@ -177,14 +182,14 @@ export const getShippingRates = async (toAddress: ShippingAddress, parcels: Ship
     });
 
     return shipment.rates.map((rate: any) => ({
-      objectId: rate.objectId,
-      serviceName: rate.servicelevelName || 'Unknown',
-      serviceToken: rate.servicelevelToken || '',
-      carrier: rate.provider || '',
+      objectId: rate.objectId || rate.object_id,
+      serviceName: rate.servicelevelName || rate.servicelevel_name || rate.attributes?.join(', ') || 'Standard Shipping',
+      serviceToken: rate.servicelevelToken || rate.servicelevel_token || '',
+      carrier: rate.provider || rate.carrier || 'USPS',
       amount: parseFloat(rate.amount || '0'),
       currency: rate.currency || 'USD',
-      estimatedDays: rate.estimatedDays || 0,
-      durationTerms: rate.durationTerms || '',
+      estimatedDays: rate.estimatedDays || rate.estimated_days || rate.duration_terms || 3,
+      durationTerms: rate.durationTerms || rate.duration_terms || '',
     }));
   } catch (error: any) {
     console.error('❌ Shipping rates error:', {

@@ -242,7 +242,11 @@ async function getTopProducts(startDate: Date, endDate: Date) {
     });
 
     // Get product details for the top products
-    const productIds = topProducts.map((item) => item.productId);
+    // Filter out null productIds (custom packs)
+    const productIds = topProducts
+      .map((item) => item.productId)
+      .filter((id): id is string => id !== null);
+    
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
       select: { id: true, name: true },
@@ -251,7 +255,7 @@ async function getTopProducts(startDate: Date, endDate: Date) {
     const productMap = new Map(products.map((p) => [p.id, p.name]));
 
     return topProducts.map((item) => ({
-      productName: productMap.get(item.productId) || item.productId,
+      productName: item.productId ? (productMap.get(item.productId) || item.productId) : "Custom Pack",
       quantity: item._sum.quantity || 0,
       revenue: item._sum.total || 0,
     }));
