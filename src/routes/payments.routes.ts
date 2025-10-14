@@ -20,7 +20,7 @@ router.post("/create-checkout-session", async (req, res) => {
       return res.status(503).json({ message: "Stripe not configured" });
     }
 
-    const { orderId, orderData, items, successUrl, cancelUrl } = req.body || {};
+    const { orderId, orderData, items, successUrl, cancelUrl, selectedShippingRate } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "No items provided" });
     }
@@ -69,6 +69,16 @@ router.post("/create-checkout-session", async (req, res) => {
           zip: orderData.shippingAddress.zipCode,
           country: orderData.shippingAddress.country,
       };
+      }
+      
+      // Include selected shipping rate if provided (pre-calculated on frontend)
+      if (selectedShippingRate) {
+        compressedData.shippingRate = {
+          objectId: selectedShippingRate.objectId,
+          carrier: selectedShippingRate.carrier,
+          amount: selectedShippingRate.amount,
+          serviceName: selectedShippingRate.serviceName,
+        };
       }
       
       const dataString = JSON.stringify(compressedData);
@@ -929,32 +939,59 @@ router.post("/webhook", async (req, res) => {
               country: orderData.shippingAddress.country,
             });
             
-            // First get shipping rates
-            const rates = await getShippingRates(
-              orderData.shippingAddress as any,
-              [{
-                length: '6',
-                width: '4',
-                height: '2',
-                weight: '0.5',
-                massUnit: 'lb' as const,
-                distanceUnit: 'in' as const,
-              }]
-            );
-            
-            console.log("📊 Shippo rates response:", {
-              ratesCount: rates.length,
-              rates: rates.map(r => ({
-                serviceName: r.serviceName,
-                carrier: r.carrier,
-                amount: r.amount,
-                estimatedDays: r.estimatedDays
-              }))
+            // Check if pre-selected shipping rate exists in metadata
+            console.log("🔍 Checking for pre-selected rate in metadata:", {
+              hasShippingRate: !!compressedData.shippingRate,
+              shippingRateData: compressedData.shippingRate,
+              fullCompressedData: JSON.stringify(compressedData, null, 2)
             });
             
-            if (rates.length > 0) {
-              // Use the first rate
-              const selectedRate = rates[0];
+            const preSelectedRate = compressedData.shippingRate;
+            let selectedRate;
+            
+            if (preSelectedRate && preSelectedRate.objectId) {
+              // Use the pre-selected rate from frontend (CORRECT - already paid for)
+              console.log("✅ Using pre-selected shipping rate from frontend:", {
+                carrier: preSelectedRate.carrier,
+                amount: preSelectedRate.amount,
+                serviceName: preSelectedRate.serviceName,
+                objectId: preSelectedRate.objectId
+              });
+              selectedRate = preSelectedRate;
+            } else {
+              // Fallback: Calculate shipping rates (old behavior)
+              console.log("⚠️ No pre-selected rate, calculating shipping...");
+              const rates = await getShippingRates(
+                orderData.shippingAddress as any,
+                [{
+                  length: '6',
+                  width: '4',
+                  height: '2',
+                  weight: '0.5',
+                  massUnit: 'lb' as const,
+                  distanceUnit: 'in' as const,
+                }]
+              );
+              
+              console.log("📊 Shippo rates response:", {
+                ratesCount: rates.length,
+                rates: rates.map(r => ({
+                  serviceName: r.serviceName,
+                  carrier: r.carrier,
+                  amount: r.amount,
+                  estimatedDays: r.estimatedDays
+                }))
+              });
+              
+              if (rates.length === 0) {
+                console.log("⚠️ No shipping rates available");
+                selectedRate = null;
+              } else {
+                selectedRate = rates[0];
+              }
+            }
+            
+            if (selectedRate) {
               const shipmentResult = await createShipment({
                 orderId: newOrder.id,
                 toAddress: orderData.shippingAddress as any,
@@ -985,15 +1022,21 @@ router.post("/webhook", async (req, res) => {
                 }
               });
               
-              if (orderWithShipment) {
-                shippingDetails = {
-                  trackingNumber: orderWithShipment.trackingNumber,
-                  trackingUrl: orderWithShipment.trackingUrl,
-                  carrier: orderWithShipment.shippingCarrier,
-                  shippingCost: orderWithShipment.shippingCost ?? selectedRate.amount,
-                };
-                console.log("📦 Shipping details prepared for email:", shippingDetails);
-              }
+                if (orderWithShipment) {
+                  // IMPORTANT: Use the rate that customer SELECTED and PAID FOR, not the Shippo transaction rate
+                  const customerPaidShippingCost = preSelectedRate?.amount || selectedRate.amount;
+                  
+                  shippingDetails = {
+                    trackingNumber: orderWithShipment.trackingNumber,
+                    trackingUrl: orderWithShipment.trackingUrl,
+                    carrier: orderWithShipment.shippingCarrier,
+                    shippingCost: customerPaidShippingCost, // Use customer-selected rate
+                  };
+                  console.log("📦 Shipping details prepared for email:", {
+                    ...shippingDetails,
+                    note: preSelectedRate ? "Using customer-selected rate" : "Using calculated rate"
+                  });
+                }
             } else {
               console.log("⚠️ No shipping rates available for new order");
             }

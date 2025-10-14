@@ -183,8 +183,9 @@ export const getShippingRates = async (toAddress: ShippingAddress, parcels: Ship
 
     return shipment.rates.map((rate: any) => ({
       objectId: rate.objectId || rate.object_id,
-      serviceName: rate.servicelevelName || rate.servicelevel_name || rate.attributes?.join(', ') || 'Standard Shipping',
-      serviceToken: rate.servicelevelToken || rate.servicelevel_token || '',
+      // Use servicelevel.name first, then fallback to attributes
+      serviceName: rate.servicelevel?.name || rate.servicelevelName || rate.servicelevel_name || rate.attributes?.join(', ') || 'Standard Shipping',
+      serviceToken: rate.servicelevel?.token || rate.servicelevelToken || rate.servicelevel_token || '',
       carrier: rate.provider || rate.carrier || 'USPS',
       amount: parseFloat(rate.amount || '0'),
       currency: rate.currency || 'USD',
